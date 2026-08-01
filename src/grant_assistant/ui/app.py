@@ -2,11 +2,15 @@
 
 Run with:
     uv run streamlit run src/grant_assistant/ui/app.py
+
+Page functions hold only presentation logic; every calculation comes from the
+audit, analytics, agent, and reporting packages.
 """
 
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -43,79 +47,34 @@ from grant_assistant.reporting import (
     write_audit_workbook,
     write_docx_report,
 )
+from grant_assistant.ui import theme
+from grant_assistant.ui.theme import Kpi
 
 load_dotenv()
 
 st.set_page_config(
-    page_title="Grant Data Quality & Reporting Assistant",
+    page_title="Grant Assistant — Data Quality & Reporting",
     page_icon="📊",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+theme.inject()
 
-# Design-system chrome (tokens documented in docs/design_system.md).
-st.markdown(
-    """
-<style>
-:root {
-  --ga-surface: #fcfcfb; --ga-surface-2: #f0efec; --ga-ink: #0b0b0b;
-  --ga-ink-2: #52514e; --ga-muted: #898781; --ga-grid: #e1e0d9;
-  --ga-baseline: #c3c2b7; --ga-blue: #2a78d6; --ga-blue-deep: #1c5cab;
-  --ga-good: #0ca30c; --ga-critical: #d03b3b;
-}
-/* KPI tiles */
-div[data-testid="stMetric"] {
-  background: var(--ga-surface);
-  border: 1px solid var(--ga-grid);
-  border-radius: 12px;
-  padding: 14px 16px 12px;
-  box-shadow: 0 1px 2px rgba(11,11,11,0.04);
-}
-div[data-testid="stMetric"] label { color: var(--ga-ink-2); }
-div[data-testid="stMetricValue"] {
-  color: var(--ga-blue-deep);
-  font-variant-numeric: tabular-nums;
-}
-/* Headings */
-h1, h2, h3 { color: var(--ga-ink); letter-spacing: -0.01em; }
-h1 { font-weight: 700; }
-/* Sidebar */
-section[data-testid="stSidebar"] {
-  background: var(--ga-surface-2);
-  border-right: 1px solid var(--ga-grid);
-}
-section[data-testid="stSidebar"] .stRadio label { color: var(--ga-ink); }
-/* Buttons */
-button[kind="primary"] { border-radius: 8px; }
-/* Dataframes: hairline border to sit on the surface */
-div[data-testid="stDataFrame"] {
-  border: 1px solid var(--ga-grid);
-  border-radius: 10px;
-  overflow: hidden;
-}
-/* Tabs underline in brand blue */
-button[data-baseweb="tab"][aria-selected="true"] { color: var(--ga-blue-deep); }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-PAGES = [
-    "🏠 Upload & Profile",
-    "🔎 Data Preview",
-    "🧪 Audit Dashboard",
-    "🗂️ Issue Explorer",
-    "📈 Analytics Dashboard",
-    "🔁 Period Comparison",
-    "💬 AI Analyst Chat",
-    "🧠 Proactive Insights",
-    "📄 Report Builder",
-    "⬇️ Export Center",
-    "⚙️ Configuration Help",
+# Navigation: (group, page label). Labels carry no emoji — the rail styles them.
+NAV: list[tuple[str, list[str]]] = [
+    ("Data", ["Upload & Profile", "Data Preview"]),
+    ("Quality", ["Audit Dashboard", "Issue Explorer"]),
+    ("Analysis", ["Analytics Dashboard", "Period Comparison"]),
+    ("AI Analyst", ["Analyst Chat", "Proactive Insights"]),
+    ("Deliverables", ["Report Builder", "Export Center"]),
+    ("Reference", ["Configuration Help"]),
 ]
+PAGES = [page for _, pages in NAV for page in pages]
 
 
-def _state() -> st.session_state:  # type: ignore[valid-type]
-    return st.session_state
+# ---------------------------------------------------------------------------
+# Session helpers
+# ---------------------------------------------------------------------------
 
 
 def _loaded() -> bool:
@@ -131,9 +90,18 @@ def _agent() -> DataAnalystAgent:
     return st.session_state["agent"]
 
 
-def _require_data() -> bool:
+def _require_data(page: str) -> bool:
     if not _loaded():
-        st.info("Upload a data file and run the pipeline on the **Upload & Profile** page first.")
+        theme.page_header(
+            page,
+            eyebrow="No dataset loaded",
+            subtitle="Load a CSV or Excel extract on the Upload & Profile page to activate "
+            "this view.",
+        )
+        st.info(
+            "Go to **Upload & Profile** in the left rail, choose a grant profile, and run "
+            "the pipeline."
+        )
         return False
     return True
 
@@ -144,94 +112,123 @@ def _output_dir() -> Path:
     return st.session_state["output_dir"]
 
 
+def _score_tone(score: float) -> str:
+    if score >= 90:
+        return "good"
+    if score >= 75:
+        return "warning"
+    return "critical"
+
+
+def _pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1f}%"
+
+
+def _usd(value: float | None) -> str:
+    return "n/a" if value is None else f"${value:,.0f}"
+
+
 # ---------------------------------------------------------------------------
 # Page: Upload & Profile
 # ---------------------------------------------------------------------------
 
 
 def page_upload() -> None:
-    st.title("Grant Data Quality & Reporting Assistant")
-    st.markdown(
-        "Audit client-level program data, explore analytics, ask a grounded AI data "
-        "analyst, and generate professional grant reports. **Synthetic demo data only — "
-        "never upload real client information to a demo environment.**"
+    pills = [theme.pill("Synthetic demo data only", "warning")]
+    if _loaded():
+        p = st.session_state["pipeline"]
+        pills.insert(0, theme.pill(f"Loaded · {p['filename']}", "good"))
+    theme.page_header(
+        "Upload & Profile",
+        eyebrow="Workspace",
+        subtitle="Select the grant reporting profile that matches your funder, then load a "
+        "client-level enrollment extract. Never upload real client data to a demo "
+        "environment.",
+        pills=pills,
     )
 
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([1, 1], gap="large")
+
     with col1:
-        st.subheader("1 · Choose a grant profile")
+        theme.panel_title("1 · Grant profile")
         profiles = list_profiles()
         if not profiles:
             st.error("No profiles found in configs/. Add a YAML profile to continue.")
             return
-        profile_id = st.selectbox("Grant profile", sorted(profiles), key="profile_choice")
+        profile_id = st.selectbox(
+            "Grant profile", sorted(profiles), key="profile_choice", label_visibility="collapsed"
+        )
         try:
             profile = load_profile_file(profiles[profile_id])
-            st.success(
-                f"**{profile.grant_name}** · {profile.reporting_period.label} · "
-                f"{len(profile.programs)} programs · "
-                f"{len(profile.performance_measures)} performance measures"
-            )
-            with st.expander("Profile details"):
-                st.markdown(f"**Grantor:** {profile.grantor or '—'}")
-                st.markdown(f"**Programs:** {', '.join(profile.program_names)}")
-                st.markdown(
-                    "**Measures:** "
-                    + "; ".join(
-                        f"{m.name} (target {m.target})" for m in profile.performance_measures
-                    )
-                )
         except ProfileValidationError as exc:
             st.error(str(exc))
             return
+        theme.kpis(
+            [
+                Kpi("Programs", str(len(profile.programs))),
+                Kpi("Measures", str(len(profile.performance_measures))),
+                Kpi("Follow-ups", str(len(profile.followup_schedule))),
+            ],
+            min_width=120,
+        )
+        st.markdown(
+            f"**{profile.grant_name}**  \n"
+            f"{profile.grantor or 'No grantor specified'}  \n"
+            f"Reporting period: {profile.reporting_period.label}"
+        )
+        with st.expander("Profile detail"):
+            st.markdown(f"**Programs:** {', '.join(profile.program_names)}")
+            st.markdown(
+                "**Performance measures:**\n"
+                + "\n".join(
+                    f"- {m.name} — target {m.target}" + (f" ({m.program})" if m.program else "")
+                    for m in profile.performance_measures
+                )
+            )
 
     with col2:
-        st.subheader("2 · Upload your data")
+        theme.panel_title("2 · Data extract")
         uploaded = st.file_uploader(
             "CSV or Excel enrollment extract",
             type=["csv", "xlsx", "xls", "xlsm"],
-            help="Try sample_data/housing_program_flawed.csv from the repository.",
+            label_visibility="collapsed",
         )
         st.caption(
-            "Sample files live in the repository's `sample_data/` folder: a clean file "
-            "and a flawed file with documented, intentionally injected errors."
+            "Samples in `sample_data/`: `housing_program_clean.csv` audits at 100/100, "
+            "`housing_program_flawed.csv` contains 23 documented injected error types."
         )
 
-    st.subheader("3 · Run the pipeline")
-    if uploaded is None:
-        st.info("Upload a file to enable the pipeline.")
-        return
-    if st.button("Run audit + analytics", type="primary"):
-        try:
-            raw = load_dataset(io.BytesIO(uploaded.getvalue()), filename=uploaded.name)
-            prepared = prepare_dataset(raw, profile)
-            audit = run_audit(prepared, profile)
-            analytics = compute_analytics(prepared, profile)
-        except (IngestionError, ProfileValidationError) as exc:
-            st.error(str(exc))
-            return
-        st.session_state["pipeline"] = {
-            "prepared": prepared,
-            "profile": profile,
-            "audit": audit,
-            "analytics": analytics,
-            "filename": uploaded.name,
-        }
-        st.session_state.pop("agent", None)
-        st.session_state.pop("chat_history", None)
-        st.success(
-            f"Processed **{uploaded.name}**: {len(prepared.df)} rows · data quality score "
-            f"{audit.overall_score:.1f}/100 (grade {audit.grade}). Use the sidebar to explore."
-        )
-        if audit.injection_warnings:
-            st.warning(
-                "Security note — possible prompt-injection text found in the file:\n\n- "
-                + "\n- ".join(audit.injection_warnings)
+        theme.panel_title("3 · Run pipeline")
+        if uploaded is None:
+            st.info("Upload a file to enable the audit and analytics pipeline.")
+        elif st.button("Run audit + analytics", type="primary", use_container_width=True):
+            try:
+                raw = load_dataset(io.BytesIO(uploaded.getvalue()), filename=uploaded.name)
+                prepared = prepare_dataset(raw, profile)
+                audit = run_audit(prepared, profile)
+                analytics = compute_analytics(prepared, profile)
+            except (IngestionError, ProfileValidationError) as exc:
+                st.error(str(exc))
+                return
+            st.session_state["pipeline"] = {
+                "prepared": prepared,
+                "profile": profile,
+                "audit": audit,
+                "analytics": analytics,
+                "filename": uploaded.name,
+            }
+            for key in ("agent", "chat_history", "report_html", "report_docx", "report_pdf"):
+                st.session_state.pop(key, None)
+            st.success(
+                f"Processed **{uploaded.name}** — {len(prepared.df)} rows, data quality score "
+                f"{audit.overall_score:.1f}/100 (grade {audit.grade})."
             )
-
-    if _loaded():
-        p = st.session_state["pipeline"]
-        st.caption(f"Currently loaded: {p['filename']} with profile '{p['profile'].profile_id}'.")
+            if audit.injection_warnings:
+                st.warning(
+                    "Security note — possible prompt-injection text found in uploaded cells. "
+                    "It is neutralized before any AI processing.\n\n- "
+                    + "\n- ".join(audit.injection_warnings[:5])
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -240,20 +237,41 @@ def page_upload() -> None:
 
 
 def page_preview() -> None:
-    st.header("Data Preview")
-    if not _require_data():
+    if not _require_data("Data Preview"):
         return
     p = st.session_state["pipeline"]
     prepared = p["prepared"]
+    theme.page_header(
+        "Data Preview",
+        eyebrow="Workspace",
+        subtitle="Source columns mapped onto the canonical schema, with dates and numerics "
+        "coerced. Invalid values are preserved in the audit trail rather than silently "
+        "dropped.",
+        pills=[theme.pill(p["filename"], "info")],
+    )
+    theme.kpis(
+        [
+            Kpi("Rows", f"{len(prepared.df):,}"),
+            Kpi("Mapped columns", str(len(prepared.mapped_columns)), tone="good"),
+            Kpi(
+                "Unmapped source columns",
+                str(len(prepared.unmapped_source_columns)),
+                tone="warning" if prepared.unmapped_source_columns else "neutral",
+            ),
+            Kpi(
+                "Missing canonical columns",
+                str(len(prepared.missing_canonical_columns)),
+                tone="warning" if prepared.missing_canonical_columns else "neutral",
+            ),
+        ]
+    )
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Rows", len(prepared.df))
-    c2.metric("Mapped columns", len(prepared.mapped_columns))
-    c3.metric("Unmapped source columns", len(prepared.unmapped_source_columns))
-
-    st.subheader("Prepared data (canonical schema)")
-    display = prepared.df.drop(columns=[schema.PROGRAM_RAW], errors="ignore")
-    st.dataframe(display, use_container_width=True, height=420)
+    theme.panel_title("Prepared data", "canonical schema")
+    st.dataframe(
+        prepared.df.drop(columns=[schema.PROGRAM_RAW], errors="ignore"),
+        use_container_width=True,
+        height=430,
+    )
 
     with st.expander("Field mapping applied"):
         st.dataframe(
@@ -266,10 +284,10 @@ def page_preview() -> None:
             use_container_width=True,
         )
         if prepared.unmapped_source_columns:
-            st.warning("Unmapped columns ignored: " + ", ".join(prepared.unmapped_source_columns))
+            st.warning("Ignored columns: " + ", ".join(prepared.unmapped_source_columns))
         if prepared.missing_canonical_columns:
             st.info(
-                "Canonical columns not present in the upload: "
+                "Canonical columns absent from the upload: "
                 + ", ".join(prepared.missing_canonical_columns)
             )
 
@@ -280,65 +298,105 @@ def page_preview() -> None:
 
 
 def page_audit() -> None:
-    st.header("Data Quality Audit")
-    if not _require_data():
+    if not _require_data("Audit Dashboard"):
         return
-    p = st.session_state["pipeline"]
-    audit = p["audit"]
+    audit = st.session_state["pipeline"]["audit"]
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Overall score", f"{audit.overall_score:.1f}/100")
-    c2.metric("Grade", audit.grade)
-    c3.metric("Total findings", audit.total_findings)
-    c4.metric("Blocking issue types", len(audit.blocking_issues))
+    pills = [theme.pill(f"Grade {audit.grade}", _score_tone(audit.overall_score))]  # type: ignore[arg-type]
+    if audit.blocking_issues:
+        pills.append(theme.pill(f"{len(audit.blocking_issues)} blocking", "critical"))
+    else:
+        pills.append(theme.pill("No blocking issues", "good"))
+    theme.page_header(
+        "Audit Dashboard",
+        eyebrow="Data Quality",
+        subtitle=f"{len(list_rules())} configurable rules across completeness, uniqueness, "
+        "validity, consistency, case management, timeliness, and statistical anomalies.",
+        pills=pills,
+    )
+
+    counts = audit.issue_count_by_severity
+    theme.kpis(
+        [
+            Kpi(
+                "Overall score",
+                f"{audit.overall_score:.1f}",
+                unit="/100",
+                note=f"Grade {audit.grade}",
+                tone=_score_tone(audit.overall_score),  # type: ignore[arg-type]
+                note_tone=_score_tone(audit.overall_score),  # type: ignore[arg-type]
+            ),
+            Kpi("Records audited", f"{audit.total_rows:,}", tone="neutral"),
+            Kpi("Total findings", f"{audit.total_findings:,}", tone="info"),
+            Kpi(
+                "Critical + high",
+                f"{counts['critical'] + counts['high']:,}",
+                tone="critical" if counts["critical"] + counts["high"] else "good",
+            ),
+            Kpi(
+                "Blocking rule types",
+                str(len(audit.blocking_issues)),
+                note="Must clear before submission" if audit.blocking_issues else "Clear",
+                tone="critical" if audit.blocking_issues else "good",
+                note_tone="critical" if audit.blocking_issues else "good",
+            ),
+        ]
+    )
 
     if audit.blocking_issues:
         st.error(
-            "**Blocking issues must be resolved before funder submission:**\n\n- "
-            + "\n- ".join(
-                f"{i.rule_id} {i.rule_name} ({i.record_count} records)"
+            "**Blocking issues must be resolved before funder submission**\n\n"
+            + "\n".join(
+                f"- `{i.rule_id}` {i.rule_name} — {i.record_count} record(s)"
                 for i in audit.blocking_issues
             )
         )
     if audit.injection_warnings:
         st.warning(
-            "Possible prompt-injection content detected in uploaded cells. It is "
-            "neutralized before any AI processing."
+            f"{len(audit.injection_warnings)} cell(s) contain text resembling prompt-injection "
+            "attempts. They are neutralized before any AI processing."
         )
 
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2, gap="large")
     with col1:
+        theme.panel_title("Findings by severity")
         st.plotly_chart(dq_severity_chart(audit), use_container_width=True)
     with col2:
+        theme.panel_title("Score by category")
         if audit.score_by_category:
             st.plotly_chart(dq_category_chart(audit), use_container_width=True)
+        else:
+            st.success("No category scored below 100 — no findings in any category.")
 
     if audit.score_by_program:
-        st.subheader("Score by program")
+        theme.panel_title("Score by program")
         st.dataframe(
-            pd.DataFrame([{"Program": k, "Score": v} for k, v in audit.score_by_program.items()]),
+            pd.DataFrame(
+                [{"Program": k, "Data quality score": v} for k, v in audit.score_by_program.items()]
+            ),
             use_container_width=True,
+            hide_index=True,
         )
 
-    st.subheader("Findings by rule")
+    theme.panel_title("Findings by rule", "sorted by severity, then volume")
     rows = [
         {
             "Rule": i.rule_id,
-            "Name": i.rule_name,
-            "Category": i.category,
+            "Finding": i.rule_name,
+            "Category": i.category.replace("_", " ").title(),
             "Severity": i.severity.label,
-            "Blocking": "Yes" if i.blocking else "No",
+            "Blocking": "Yes" if i.blocking else "—",
             "Records": i.record_count,
-            "Recommendation": i.recommendation,
+            "Recommended correction": i.recommendation,
         }
         for i in audit.issues_sorted()
     ]
     if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, height=420)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, height=420, hide_index=True)
     else:
-        st.success("No data quality issues detected — this dataset is clean. 🎉")
+        st.success("No data quality issues detected — this dataset is clean.")
 
-    st.subheader("Executive audit summary")
+    theme.panel_title("Executive audit summary")
     st.write(audit.executive_summary())
 
 
@@ -348,33 +406,35 @@ def page_audit() -> None:
 
 
 def page_issues() -> None:
-    st.header("Issue Explorer")
-    if not _require_data():
+    if not _require_data("Issue Explorer"):
         return
-    p = st.session_state["pipeline"]
-    audit = p["audit"]
+    audit = st.session_state["pipeline"]["audit"]
     frame = audit.row_level_frame()
+
+    theme.page_header(
+        "Issue Explorer",
+        eyebrow="Data Quality",
+        subtitle="Row-level findings for correction work. Client-level detail appears here "
+        "because you opened this view explicitly — AI answers and reports stay aggregated.",
+        pills=[theme.pill(f"{len(frame):,} findings", "info")],
+    )
     if frame.empty:
         st.success("No row-level issues to explore — the dataset is clean.")
         return
 
-    st.caption(
-        "Row-level findings are shown here because you explicitly opened the Issue "
-        "Explorer; AI chat and reports only use aggregated results."
-    )
     c1, c2, c3 = st.columns(3)
-    with c1:
-        severities = c1.multiselect(
-            "Severity", [s.label for s in SEVERITY_ORDER], default=[], placeholder="All"
-        )
-    with c2:
-        rules = c2.multiselect(
-            "Rule", sorted(frame["rule_id"].unique()), default=[], placeholder="All"
-        )
-    with c3:
-        programs = c3.multiselect(
-            "Program", sorted(frame["program"].dropna().unique()), default=[], placeholder="All"
-        )
+    severities = c1.multiselect(
+        "Severity", [s.label for s in SEVERITY_ORDER], default=[], placeholder="All severities"
+    )
+    rules = c2.multiselect(
+        "Rule", sorted(frame["rule_id"].unique()), default=[], placeholder="All rules"
+    )
+    programs = c3.multiselect(
+        "Program",
+        sorted(x for x in frame["program"].dropna().unique() if x),
+        default=[],
+        placeholder="All programs",
+    )
 
     filtered = frame
     if severities:
@@ -384,10 +444,10 @@ def page_issues() -> None:
     if programs:
         filtered = filtered[filtered["program"].isin(programs)]
 
-    st.write(f"{len(filtered)} finding(s) shown of {len(frame)} total.")
-    st.dataframe(filtered, use_container_width=True, height=460)
+    theme.panel_title("Findings", f"{len(filtered):,} of {len(frame):,} shown")
+    st.dataframe(filtered, use_container_width=True, height=460, hide_index=True)
     st.download_button(
-        "Download row-level issues (CSV)",
+        "Download filtered findings (CSV)",
         data=filtered.to_csv(index=False).encode("utf-8"),
         file_name="row_level_issues.csv",
         mime="text/csv",
@@ -400,60 +460,99 @@ def page_issues() -> None:
 
 
 def page_analytics() -> None:
-    st.header("Analytics Dashboard")
-    if not _require_data():
+    if not _require_data("Analytics Dashboard"):
         return
-    p = st.session_state["pipeline"]
-    a = p["analytics"]
+    a = st.session_state["pipeline"]["analytics"]
 
-    c = st.columns(6)
-    c[0].metric("Enrollments", a.total_enrollments)
-    c[1].metric("Households", a.households_served)
-    c[2].metric("Individuals", a.total_individuals)
-    c[3].metric("Active", a.active_enrollments)
-    c[4].metric("Exits", a.total_exits)
-    c[5].metric(
-        "Successful exits",
-        a.successful_exits,
-        f"{a.successful_exit_rate}%" if a.successful_exit_rate is not None else None,
+    theme.page_header(
+        "Analytics Dashboard",
+        eyebrow="Analysis",
+        subtitle="Deterministic program metrics calculated in tested Python — the same "
+        "numbers used by the report generator and the AI analyst.",
+        pills=[theme.pill(f"{a.period_start:%b %Y} – {a.period_end:%b %Y}", "info")],
     )
 
+    theme.kpis(
+        [
+            Kpi("Enrollments", f"{a.total_enrollments:,}"),
+            Kpi("Households", f"{a.households_served:,}"),
+            Kpi(
+                "Individuals",
+                f"{a.total_individuals:,}",
+                note=f"{a.total_adults:,} adults · {a.total_children:,} children",
+            ),
+            Kpi("Active", f"{a.active_enrollments:,}", tone="neutral"),
+            Kpi("Exits", f"{a.total_exits:,}", note=f"{_pct(a.exit_rate)} of enrollments"),
+            Kpi(
+                "Successful exits",
+                f"{a.successful_exits:,}",
+                note=_pct(a.successful_exit_rate),
+                tone="good",
+                note_tone="good",
+            ),
+            Kpi(
+                "Overdue follow-ups",
+                f"{a.total_overdue_followups:,}",
+                tone="critical" if a.total_overdue_followups else "good",
+            ),
+        ],
+        min_width=146,
+    )
     if a.notes:
-        st.caption(" · ".join(a.notes))
+        st.caption("Methodology notes: " + " · ".join(a.notes))
 
-    tab_prog, tab_trend, tab_outcome, tab_demo, tab_income, tab_follow, tab_measures = st.tabs(
+    tabs = st.tabs(
         ["Programs", "Trends", "Outcomes", "Demographics", "Income", "Follow-Ups", "Measures"]
     )
 
-    with tab_prog:
+    with tabs[0]:
         if a.programs:
             st.plotly_chart(program_comparison_chart(a), use_container_width=True)
             st.plotly_chart(outcome_rate_chart(a), use_container_width=True)
             st.dataframe(
                 pd.DataFrame([m.model_dump() for m in a.programs]),
                 use_container_width=True,
+                hide_index=True,
             )
-    with tab_trend:
+        else:
+            st.info("No program-level data available.")
+
+    with tabs[1]:
         if a.monthly_enrollments:
             st.plotly_chart(enrollment_trend_chart(a), use_container_width=True)
             if a.month_over_month_enrollment_change is not None:
-                st.metric(
-                    "Month-over-month enrollment change",
-                    f"{a.month_over_month_enrollment_change}%",
+                change = a.month_over_month_enrollment_change
+                theme.kpis(
+                    [
+                        Kpi(
+                            "Month-over-month enrollment change",
+                            f"{change:+.1f}%",
+                            tone="good" if change >= 0 else "warning",
+                        )
+                    ],
+                    min_width=260,
                 )
-    with tab_outcome:
+        else:
+            st.info("No dated enrollments to trend.")
+
+    with tabs[2]:
         if a.exit_destination_breakdown:
             st.plotly_chart(exit_destination_chart(a), use_container_width=True)
             st.dataframe(
                 pd.DataFrame(
-                    [{"Category": k, "Exits": v} for k, v in a.exit_category_breakdown.items()]
+                    [
+                        {"Outcome category": k.replace("_", " ").title(), "Exits": v}
+                        for k, v in a.exit_category_breakdown.items()
+                    ]
                 ),
                 use_container_width=True,
+                hide_index=True,
             )
         else:
             st.info("No exits with destinations recorded.")
-    with tab_demo:
-        col1, col2 = st.columns(2)
+
+    with tabs[3]:
+        col1, col2 = st.columns(2, gap="large")
         with col1:
             st.plotly_chart(demographic_chart(a, "age_groups"), use_container_width=True)
             st.plotly_chart(demographic_chart(a, "gender"), use_container_width=True)
@@ -462,47 +561,60 @@ def page_analytics() -> None:
             st.plotly_chart(demographic_chart(a, "race"), use_container_width=True)
             st.plotly_chart(demographic_chart(a, "veteran_status"), use_container_width=True)
             st.plotly_chart(demographic_chart(a, "disability_status"), use_container_width=True)
-    with tab_income:
-        cols = st.columns(4)
-        cols[0].metric(
-            "Avg entry income",
-            f"${a.avg_entry_income:,.0f}" if a.avg_entry_income is not None else "n/a",
-        )
-        cols[1].metric(
-            "Avg exit income",
-            f"${a.avg_exit_income:,.0f}" if a.avg_exit_income is not None else "n/a",
-        )
-        cols[2].metric(
-            "Median income change",
-            f"${a.median_income_change:,.0f}" if a.median_income_change is not None else "n/a",
-        )
-        cols[3].metric(
-            "Households increasing income",
-            f"{a.pct_income_increased}%" if a.pct_income_increased is not None else "n/a",
+
+    with tabs[4]:
+        theme.kpis(
+            [
+                Kpi("Avg entry income", _usd(a.avg_entry_income)),
+                Kpi("Avg exit income", _usd(a.avg_exit_income)),
+                Kpi(
+                    "Median income change",
+                    _usd(a.median_income_change),
+                    tone="good" if (a.median_income_change or 0) > 0 else "neutral",
+                ),
+                Kpi("Households increasing income", _pct(a.pct_income_increased), tone="good"),
+                Kpi("Exits with income data", f"{a.n_income_pairs:,}", tone="neutral"),
+            ]
         )
         if a.income_changes:
             st.plotly_chart(income_change_chart(a), use_container_width=True)
-    with tab_follow:
+        else:
+            st.info("No exits have both entry and exit income recorded.")
+
+    with tabs[5]:
         if a.followups:
             st.plotly_chart(followup_chart(a), use_container_width=True)
             st.dataframe(
                 pd.DataFrame([f.model_dump() for f in a.followups]),
                 use_container_width=True,
+                hide_index=True,
             )
-    with tab_measures:
+        else:
+            st.info("This profile defines no follow-up schedule.")
+
+    with tabs[6]:
         if a.measures:
             st.plotly_chart(goal_vs_actual_chart(a), use_container_width=True)
-            rows = [
-                {
-                    "Measure": m.name,
-                    "Target": m.target,
-                    "Actual": m.actual,
-                    "Status": "✅ Met" if m.met else ("❌ Not met" if m.met is False else "—"),
-                    "Small sample": "⚠️" if m.small_sample else "",
-                }
-                for m in a.measures
-            ]
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "ID": m.id,
+                            "Measure": m.name,
+                            "Scope": m.program or "All programs",
+                            "Target": m.target,
+                            "Actual": m.actual,
+                            "Status": "Met" if m.met else ("Not met" if m.met is False else "—"),
+                            "Small sample": "Yes" if m.small_sample else "",
+                        }
+                        for m in a.measures
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("This profile defines no performance measures.")
 
 
 # ---------------------------------------------------------------------------
@@ -511,24 +623,28 @@ def page_analytics() -> None:
 
 
 def page_comparison() -> None:
-    st.header("Period Comparison")
-    if not _require_data():
+    if not _require_data("Period Comparison"):
         return
+    from grant_assistant.analytics.charts import comparison_chart
+    from grant_assistant.analytics.comparison import compare_analytics
+
     p = st.session_state["pipeline"]
-    st.markdown(
-        f"The currently loaded file (**{p['filename']}**) is treated as the *current* "
-        "period. Upload a **prior-period extract** (same layout, same profile) to compare."
+    theme.page_header(
+        "Period Comparison",
+        eyebrow="Analysis",
+        subtitle=f"The loaded extract ({p['filename']}) is the current period. Upload a "
+        "prior-period extract with the same layout to compute deltas.",
+        pills=[theme.pill(f"Current · {p['filename']}", "info")],
     )
+
     prior_upload = st.file_uploader(
         "Prior-period CSV or Excel extract",
         type=["csv", "xlsx", "xls", "xlsm"],
         key="prior_upload",
     )
     if prior_upload is None:
-        st.info("Upload a prior-period file to compute deltas.")
+        st.info("Upload a prior-period file to compute period-over-period movement.")
         return
-    from grant_assistant.analytics.charts import comparison_chart
-    from grant_assistant.analytics.comparison import compare_analytics
 
     try:
         prior_raw = load_dataset(io.BytesIO(prior_upload.getvalue()), filename=prior_upload.name)
@@ -537,71 +653,94 @@ def page_comparison() -> None:
     except (IngestionError, ProfileValidationError) as exc:
         st.error(str(exc))
         return
+
     comparison = compare_analytics(
-        p["analytics"],
-        prior_analytics,
-        current_label=p["filename"],
-        prior_label=prior_upload.name,
+        p["analytics"], prior_analytics, p["filename"], prior_upload.name
     )
 
-    st.subheader("Headline metrics")
-    rows = []
-    for d in comparison.headline:
-        trend = "—"
-        if d.improved is True:
-            trend = "▲ improved"
-        elif d.improved is False:
-            trend = "▼ declined"
-        rows.append(
-            {
-                "Metric": d.label,
-                "Prior": d.format_value(d.prior),
-                "Current": d.format_value(d.current),
-                "Change": d.format_value(d.delta) if d.delta is not None else "n/a",
-                "Trend": trend,
-            }
-        )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    improved = sum(1 for d in comparison.headline if d.improved is True)
+    declined = sum(1 for d in comparison.headline if d.improved is False)
+    theme.kpis(
+        [
+            Kpi("Metrics improved", str(improved), tone="good"),
+            Kpi("Metrics declined", str(declined), tone="critical" if declined else "good"),
+            Kpi(
+                "Metrics unchanged",
+                str(len(comparison.headline) - improved - declined),
+                tone="neutral",
+            ),
+        ],
+        min_width=180,
+    )
+
+    theme.panel_title("Headline metrics")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Metric": d.label,
+                    "Prior": d.format_value(d.prior),
+                    "Current": d.format_value(d.current),
+                    "Change": d.format_value(d.delta) if d.delta is not None else "n/a",
+                    "% change": f"{d.pct_change:+.1f}%" if d.pct_change is not None else "—",
+                    "Direction": (
+                        "Improved"
+                        if d.improved is True
+                        else ("Declined" if d.improved is False else "No change")
+                    ),
+                }
+                for d in comparison.headline
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
     st.plotly_chart(comparison_chart(comparison), use_container_width=True)
 
-    st.subheader("Program movement (successful-exit rate)")
-    prog_rows = [
-        {
-            "Program": pr.program,
-            "Prior rate": f"{pr.prior_rate}%" if pr.prior_rate is not None else "n/a",
-            "Current rate": f"{pr.current_rate}%" if pr.current_rate is not None else "n/a",
-            "Delta (pts)": pr.delta if pr.delta is not None else "n/a",
-            "Small sample": "⚠️" if pr.small_sample else "",
-        }
-        for pr in comparison.programs
-    ]
-    st.dataframe(pd.DataFrame(prog_rows), use_container_width=True)
+    theme.panel_title("Program movement", "successful-exit rate")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Program": pr.program,
+                    "Prior rate": _pct(pr.prior_rate),
+                    "Current rate": _pct(pr.current_rate),
+                    "Delta (pts)": pr.delta if pr.delta is not None else "n/a",
+                    "Small sample": "Yes" if pr.small_sample else "",
+                }
+                for pr in comparison.programs
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
-    st.subheader("Narrative")
+    theme.panel_title("Narrative")
     for line in comparison.narrative:
         st.markdown(f"- {line}")
 
 
 # ---------------------------------------------------------------------------
-# Page: AI Analyst Chat
+# Page: Analyst Chat
 # ---------------------------------------------------------------------------
 
 
 def page_chat() -> None:
-    st.header("AI Analyst Chat")
-    if not _require_data():
+    if not _require_data("Analyst Chat"):
         return
     agent = _agent()
-    if agent.ai_enabled:
-        st.caption(
-            "AI mode: answers are generated by Claude, grounded in a sanitized fact sheet "
-            "of deterministically calculated metrics. No client-level data is sent."
-        )
-    else:
-        st.caption(
-            "Non-AI mode (no API key configured): deterministic answers computed from "
-            "calculated metrics. Set ANTHROPIC_API_KEY in .env for conversational answers."
-        )
+    mode_pill = (
+        theme.pill("AI mode · Claude with tool use", "good")
+        if agent.ai_enabled
+        else theme.pill("Deterministic mode · no API key", "warning")
+    )
+    theme.page_header(
+        "Analyst Chat",
+        eyebrow="AI Analyst",
+        subtitle="A senior-analyst agent grounded in the calculated metrics. It retrieves "
+        "values through typed tools, never invents numbers, and keeps answers aggregated.",
+        pills=[mode_pill],
+    )
 
     examples = [
         "Which program had the highest successful exit rate?",
@@ -611,14 +750,16 @@ def page_chat() -> None:
         "Are any metrics distorted by small sample sizes?",
         "Which outcomes are below target?",
     ]
-    st.markdown("**Example questions:** " + " · ".join(f"_{q}_" for q in examples))
+    with st.expander("Example questions"):
+        for example in examples:
+            st.markdown(f"- {example}")
 
     history: list[dict[str, str]] = st.session_state.setdefault("chat_history", [])
     for msg in history:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    question = st.chat_input("Ask the senior data analyst…")
+    question: str | None = st.chat_input("Ask the senior data analyst…")
     if question:
         with st.chat_message("user"):
             st.markdown(question)
@@ -635,36 +776,50 @@ def page_chat() -> None:
 
 
 def page_insights() -> None:
-    st.header("Proactive Insights")
-    if not _require_data():
+    if not _require_data("Proactive Insights"):
         return
     agent = _agent()
-    st.caption(
-        "A senior-analyst review generated automatically from the calculated results — "
-        "anomalies, trends, risks, and recommended actions. Works with or without AI."
-    )
     report = agent.proactive_insights()
-    icons = {
-        "Key Findings": "🔑",
-        "Notable Trends": "📈",
-        "Anomalies Detected": "🚨",
-        "Data Quality Risks": "🧪",
-        "Program Strengths": "💪",
-        "Program Concerns": "⚠️",
-        "Recommended Actions": "✅",
-        "Questions Requiring Further Investigation": "❓",
-        "Executive Takeaways": "🏛️",
-    }
-    for title, items in report.sections().items():
-        if not items:
-            continue
-        st.subheader(f"{icons.get(title, '•')} {title}")
-        for item in items:
-            st.markdown(f"- {item}")
+    theme.page_header(
+        "Proactive Insights",
+        eyebrow="AI Analyst",
+        subtitle="A senior-analyst review generated automatically from the calculated "
+        "results — anomalies, trends, risks, and recommended actions. Works with or "
+        "without an API key.",
+        pills=[
+            theme.pill(f"{sum(len(v) for v in report.sections().values())} observations", "info")
+        ],
+    )
 
-    if agent.ai_enabled and st.button("Generate AI-polished narrative"):
-        with st.spinner("Narrating insights…"):
-            st.markdown(agent.narrated_insights())
+    tone_by_section: dict[str, str] = {
+        "Anomalies Detected": "warning",
+        "Data Quality Risks": "critical",
+        "Program Concerns": "warning",
+        "Program Strengths": "good",
+        "Recommended Actions": "info",
+    }
+    left, right = st.columns(2, gap="large")
+    sections = [(title, items) for title, items in report.sections().items() if items]
+    for index, (title, items) in enumerate(sections):
+        target = left if index % 2 == 0 else right
+        with target:
+            theme.panel_title(title)
+            tone = tone_by_section.get(title, "neutral")
+            body = "\n".join(f"- {item}" for item in items)
+            if tone == "critical":
+                st.error(body)
+            elif tone == "warning":
+                st.warning(body)
+            elif tone == "good":
+                st.success(body)
+            else:
+                st.markdown(body)
+
+    if agent.ai_enabled:
+        theme.panel_title("AI narrative")
+        if st.button("Generate AI-polished narrative"):
+            with st.spinner("Narrating insights…"):
+                st.markdown(agent.narrated_insights())
 
 
 # ---------------------------------------------------------------------------
@@ -673,82 +828,87 @@ def page_insights() -> None:
 
 
 def page_report() -> None:
-    st.header("Grant Report Builder")
-    if not _require_data():
+    if not _require_data("Report Builder"):
         return
+    from grant_assistant.reporting import PdfBackendError, pdf_backend, write_pdf_report
+
     p = st.session_state["pipeline"]
     agent = _agent()
-
-    st.markdown(
-        f"Build the **{p['profile'].report.title}** for period "
-        f"**{p['profile'].reporting_period.label}**. The report includes a cover page, "
-        "executive summary, data quality statement, population and demographics, "
-        "outcomes, income, follow-ups, performance measures, program comparisons, "
-        "charts, findings, recommendations, methodology, limitations, and an appendix "
-        "of measure definitions."
+    narrative_pill = (
+        theme.pill("AI-assisted narrative", "good")
+        if agent.ai_enabled
+        else theme.pill("Deterministic narrative", "neutral")
     )
-    st.info(
-        "Narrative mode: "
-        + (
-            "**AI-assisted** — executive summary written by Claude from calculated metrics."
-            if agent.ai_enabled
-            else "**Deterministic** — template-based narrative (set ANTHROPIC_API_KEY for AI)."
-        )
+    theme.page_header(
+        "Report Builder",
+        eyebrow="Deliverables",
+        subtitle=f"{p['profile'].report.title} · {p['profile'].reporting_period.label}. "
+        "Includes cover, executive summary, data quality statement, population, "
+        "demographics, outcomes, income, follow-ups, measures, program comparison, "
+        "charts, findings, recommendations, methodology, limitations, and appendix.",
+        pills=[narrative_pill],
     )
 
     if st.button("Build report", type="primary"):
         with st.spinner("Generating report…"):
             data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
-            html = render_html_report(data)
-            out = _output_dir()
-            docx_path = write_docx_report(data, out / "grant_report.docx")
-            st.session_state["report_html"] = html
-            st.session_state["report_docx"] = docx_path.read_bytes()
+            st.session_state["report_html"] = render_html_report(data)
+            st.session_state["report_docx"] = write_docx_report(
+                data, _output_dir() / "grant_report.docx"
+            ).read_bytes()
             st.session_state["report_summary"] = data.executive_summary
+            st.session_state.pop("report_pdf", None)
         st.success("Report generated.")
 
-    if "report_html" in st.session_state:
-        st.subheader("Executive summary preview")
-        st.write(st.session_state["report_summary"])
-        col1, col2, col3 = st.columns(3)
-        col1.download_button(
-            "Download HTML report",
-            data=st.session_state["report_html"].encode("utf-8"),
-            file_name="grant_report.html",
-            mime="text/html",
-        )
-        col2.download_button(
-            "Download Word report",
-            data=st.session_state["report_docx"],
-            file_name="grant_report.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-        with col3:
-            from grant_assistant.reporting import PdfBackendError, pdf_backend, write_pdf_report
+    if "report_html" not in st.session_state:
+        return
 
-            if "report_pdf" in st.session_state:
-                st.download_button(
-                    "Download PDF report",
-                    data=st.session_state["report_pdf"],
-                    file_name="grant_report.pdf",
-                    mime="application/pdf",
-                )
-            elif pdf_backend() is None:
-                st.caption(
-                    "PDF export needs a headless browser: `uv sync --extra pdf` then "
-                    "`uv run playwright install chromium` (or Microsoft Edge on Windows)."
-                )
-            elif st.button("Render PDF report"):
-                with st.spinner("Rendering PDF…"):
-                    try:
-                        data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
-                        pdf_path = write_pdf_report(data, _output_dir() / "grant_report.pdf")
-                        st.session_state["report_pdf"] = pdf_path.read_bytes()
-                        st.rerun()
-                    except PdfBackendError as exc:
-                        st.error(str(exc))
-        with st.expander("Inline HTML preview"):
-            st.components.v1.html(st.session_state["report_html"], height=650, scrolling=True)
+    theme.panel_title("Executive summary preview")
+    st.write(st.session_state["report_summary"])
+
+    theme.panel_title("Download")
+    col1, col2, col3 = st.columns(3)
+    col1.download_button(
+        "HTML report",
+        data=st.session_state["report_html"].encode("utf-8"),
+        file_name="grant_report.html",
+        mime="text/html",
+        use_container_width=True,
+    )
+    col2.download_button(
+        "Word report",
+        data=st.session_state["report_docx"],
+        file_name="grant_report.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        use_container_width=True,
+    )
+    with col3:
+        if "report_pdf" in st.session_state:
+            st.download_button(
+                "PDF report",
+                data=st.session_state["report_pdf"],
+                file_name="grant_report.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        elif pdf_backend() is None:
+            st.caption(
+                "PDF needs a headless browser: `uv sync --extra pdf` then "
+                "`uv run playwright install chromium`."
+            )
+        elif st.button("Render PDF", use_container_width=True):
+            with st.spinner("Rendering PDF…"):
+                try:
+                    data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
+                    st.session_state["report_pdf"] = write_pdf_report(
+                        data, _output_dir() / "grant_report.pdf"
+                    ).read_bytes()
+                    st.rerun()
+                except PdfBackendError as exc:
+                    st.error(str(exc))
+
+    with st.expander("Inline preview"):
+        st.components.v1.html(st.session_state["report_html"], height=650, scrolling=True)
 
 
 # ---------------------------------------------------------------------------
@@ -757,71 +917,86 @@ def page_report() -> None:
 
 
 def page_exports() -> None:
-    st.header("Export Center")
-    if not _require_data():
+    if not _require_data("Export Center"):
         return
     p = st.session_state["pipeline"]
     out = _output_dir()
+    theme.page_header(
+        "Export Center",
+        eyebrow="Deliverables",
+        subtitle="Every artifact from this session: audit workbooks with a correction "
+        "template, analytics summaries, row-level findings, and generated reports.",
+    )
 
-    st.markdown("Generate and download every artifact from this session.")
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2, gap="large")
 
     with col1:
-        st.subheader("Audit exports")
-        if st.button("Prepare audit workbook (Excel)"):
-            path = write_audit_workbook(p["audit"], p["prepared"], out / "audit_workbook.xlsx")
-            st.session_state["export_audit"] = path.read_bytes()
+        theme.panel_title("Audit exports")
+        if st.button("Prepare audit workbook", use_container_width=True):
+            st.session_state["export_audit"] = write_audit_workbook(
+                p["audit"], p["prepared"], out / "audit_workbook.xlsx"
+            ).read_bytes()
         if "export_audit" in st.session_state:
             st.download_button(
-                "Download audit_workbook.xlsx",
+                "audit_workbook.xlsx",
                 data=st.session_state["export_audit"],
                 file_name="audit_workbook.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
             )
         st.download_button(
-            "Download row-level issues (CSV)",
+            "row_level_issues.csv",
             data=p["audit"].row_level_frame().to_csv(index=False).encode("utf-8"),
             file_name="row_level_issues.csv",
             mime="text/csv",
+            use_container_width=True,
         )
 
     with col2:
-        st.subheader("Analytics exports")
-        if st.button("Prepare analytics workbook (Excel)"):
-            path = write_analytics_workbook(p["analytics"], out / "analytics_summary.xlsx")
-            st.session_state["export_analytics"] = path.read_bytes()
+        theme.panel_title("Analytics exports")
+        if st.button("Prepare analytics workbook", use_container_width=True):
+            st.session_state["export_analytics"] = write_analytics_workbook(
+                p["analytics"], out / "analytics_summary.xlsx"
+            ).read_bytes()
         if "export_analytics" in st.session_state:
             st.download_button(
-                "Download analytics_summary.xlsx",
+                "analytics_summary.xlsx",
                 data=st.session_state["export_analytics"],
                 file_name="analytics_summary.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
             )
         st.download_button(
-            "Download analytics (JSON)",
+            "analytics.json",
             data=p["analytics"].model_dump_json(indent=2).encode("utf-8"),
             file_name="analytics.json",
             mime="application/json",
+            use_container_width=True,
         )
 
-    st.subheader("Reports")
-    st.caption("Build reports on the Report Builder page — download buttons appear there too.")
-    if "report_html" in st.session_state:
-        st.download_button(
-            "Download grant_report.html",
-            data=st.session_state["report_html"].encode("utf-8"),
-            file_name="grant_report.html",
-            mime="text/html",
-            key="export_html",
-        )
-    if "report_docx" in st.session_state:
-        st.download_button(
-            "Download grant_report.docx",
-            data=st.session_state["report_docx"],
-            file_name="grant_report.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key="export_docx",
-        )
+    theme.panel_title("Reports", "built on the Report Builder page")
+    if "report_html" in st.session_state or "report_docx" in st.session_state:
+        rcol1, rcol2 = st.columns(2)
+        if "report_html" in st.session_state:
+            rcol1.download_button(
+                "grant_report.html",
+                data=st.session_state["report_html"].encode("utf-8"),
+                file_name="grant_report.html",
+                mime="text/html",
+                key="export_html",
+                use_container_width=True,
+            )
+        if "report_docx" in st.session_state:
+            rcol2.download_button(
+                "grant_report.docx",
+                data=st.session_state["report_docx"],
+                file_name="grant_report.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="export_docx",
+                use_container_width=True,
+            )
+    else:
+        st.info("No report built yet — visit **Report Builder** to generate one.")
 
 
 # ---------------------------------------------------------------------------
@@ -830,78 +1005,85 @@ def page_exports() -> None:
 
 
 def page_config_help() -> None:
-    st.header("Configuration Help")
+    theme.page_header(
+        "Configuration Help",
+        eyebrow="Reference",
+        subtitle="Grant profiles are YAML files in configs/. They drive field mappings, "
+        "controlled vocabularies, follow-up schedules, performance targets, outcome "
+        "definitions, severity overrides, and blocking rules.",
+        pills=[theme.pill(f"{len(list_rules())} audit rules", "info")],
+    )
+
     st.markdown(
         """
-Grant profiles are YAML files in `configs/`. Each profile defines everything the
-pipeline needs for one grant: reporting period, programs and aliases, field
-mappings from your spreadsheet headers to the canonical schema, controlled
-vocabularies, follow-up schedules, performance measures with targets, exit
-destination categories, and report settings.
+**To add a grant profile**
 
-**To add a new grant profile:**
-1. Copy an existing profile in `configs/` (e.g. `housing_stability.yaml`).
-2. Set a unique `profile_id` and update `grant_name` and `reporting_period`.
-3. Update `field_mappings` so each of your spreadsheet headers maps to a canonical column.
-4. Define your programs with any alias labels that appear in the data.
+1. Copy an existing profile in `configs/` (for example `housing_stability.yaml`).
+2. Set a unique `profile_id`, then update `grant_name` and `reporting_period`.
+3. Map each spreadsheet header to a canonical column in `field_mappings`.
+4. Define programs with any alias labels that appear in your data.
 5. Adjust `controlled_values`, `followup_schedule`, and `performance_measures`.
-6. Validate with: `uv run grant-assistant validate-config`
+6. Validate: `uv run grant-assistant validate-config`
 
-See `docs/creating_profiles.md` in the repository for the full field-by-field guide.
+Full guide: `docs/creating_profiles.md`. Design tokens: `docs/design_system.md`.
         """
     )
 
-    st.subheader("Canonical schema")
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {"Canonical column": c, "Label": schema.label_for(c)}
-                for c in schema.CANONICAL_COLUMNS
-            ]
-        ),
-        use_container_width=True,
-        height=350,
-    )
-
-    st.subheader("Performance measure metrics available")
-    st.code("\n".join(available_measure_metrics()))
-
-    st.subheader("Audit rules")
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Rule": m.rule_id,
-                    "Name": m.name,
-                    "Category": m.category,
-                    "Default severity": m.severity.label,
-                    "Blocking by default": "Yes" if m.blocking else "No",
-                    "Description": m.description,
-                }
-                for m in list_rules()
-            ]
-        ),
-        use_container_width=True,
-        height=420,
-    )
+    tab1, tab2, tab3 = st.tabs(["Canonical schema", "Measure metrics", "Audit rules"])
+    with tab1:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"Canonical column": c, "Report label": schema.label_for(c)}
+                    for c in schema.CANONICAL_COLUMNS
+                ]
+            ),
+            use_container_width=True,
+            height=380,
+            hide_index=True,
+        )
+    with tab2:
+        st.caption("Values a profile's `performance_measures.metric` may reference.")
+        st.code("\n".join(available_measure_metrics()))
+        st.caption(
+            "Add `program: <name>` to a measure to scope it to a single program "
+            "(enrollments, exits, exit_rate, successful_exit_rate, permanent_housing_rate, "
+            "avg_income_change, median_income_change)."
+        )
+    with tab3:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Rule": m.rule_id,
+                        "Name": m.name,
+                        "Category": m.category.replace("_", " ").title(),
+                        "Default severity": m.severity.label,
+                        "Blocking": "Yes" if m.blocking else "—",
+                        "Description": m.description,
+                    }
+                    for m in list_rules()
+                ]
+            ),
+            use_container_width=True,
+            height=420,
+            hide_index=True,
+        )
 
 
 # ---------------------------------------------------------------------------
-# Router
+# Demo autoload + router
 # ---------------------------------------------------------------------------
 
 
 def _demo_autoload() -> None:
-    """Load a dataset automatically when GRANT_ASSISTANT_DEMO points to a file.
+    """Preload a dataset when GRANT_ASSISTANT_DEMO or ?demo= is supplied.
 
-    Lets demos and screenshots start with data preloaded, e.g.:
-        GRANT_ASSISTANT_DEMO=sample_data/housing_program_flawed.csv
+    Used for demos and screenshots, e.g.
+        ?demo=housing_program_flawed.csv&profile=housing_stability
     """
-    import os
-
     demo_file = os.environ.get("GRANT_ASSISTANT_DEMO", "").strip()
     demo_profile = os.environ.get("GRANT_ASSISTANT_DEMO_PROFILE", "").strip()
-    # ?demo=<name>&profile=<id> also works, restricted to the sample_data folder.
     query_demo = st.query_params.get("demo", "")
     if query_demo:
         candidate = (Path("sample_data") / Path(query_demo).name).resolve()
@@ -918,8 +1100,7 @@ def _demo_autoload() -> None:
     if profile_id not in profiles:
         return
     profile = load_profile_file(profiles[profile_id])
-    raw = load_dataset(demo_path)
-    prepared = prepare_dataset(raw, profile)
+    prepared = prepare_dataset(load_dataset(demo_path), profile)
     st.session_state["pipeline"] = {
         "prepared": prepared,
         "profile": profile,
@@ -929,40 +1110,75 @@ def _demo_autoload() -> None:
     }
 
 
-def main() -> None:
-    _demo_autoload()
+def _select_page(group: str) -> None:
+    """Nav callback: adopt this group's choice and clear the other groups.
+
+    The rail is several radio groups, so exactly one selection must survive —
+    otherwise two rows render as active.
+    """
+    choice = st.session_state.get(f"nav_{group}")
+    if choice is None:
+        return
+    st.session_state["nav_page"] = choice
+    for other, _pages in NAV:
+        if other != group:
+            st.session_state[f"nav_{other}"] = None
+
+
+def _rail() -> str:
+    """Render the navigation rail and return the selected page."""
     with st.sidebar:
-        st.markdown("## 📊 Grant Assistant")
-        page = st.radio("Navigate", PAGES, label_visibility="collapsed")
-        st.divider()
+        theme.brand()
+        current = st.session_state.get("nav_page", PAGES[0])
+        for group, pages in NAV:
+            theme.nav_group(group)
+            st.radio(
+                group,
+                pages,
+                index=pages.index(current) if current in pages else None,
+                key=f"nav_{group}",
+                on_change=_select_page,
+                args=(group,),
+                label_visibility="collapsed",
+            )
+        selected = st.session_state.get("nav_page", PAGES[0])
         if _loaded():
             p = st.session_state["pipeline"]
-            st.caption(
-                f"**Loaded:** {p['filename']}\n\n"
-                f"**Profile:** {p['profile'].profile_id}\n\n"
-                f"**DQ score:** {p['audit'].overall_score:.1f} ({p['audit'].grade})"
+            audit = p["audit"]
+            theme.rail_card(
+                [
+                    ("Dataset", p["filename"]),
+                    ("Profile", p["profile"].profile_id),
+                    ("Records", f"{audit.total_rows:,}"),
+                    ("DQ score", f"{audit.overall_score:.1f} ({audit.grade})"),
+                ]
             )
         else:
-            st.caption("No dataset loaded yet.")
-        st.caption(
-            ("🤖 AI mode: **enabled**" if ai_available() else "🔌 AI mode: **off** (no API key)")
-            + f"\n\n_{date.today():%B %d, %Y}_"
+            theme.rail_card([("Dataset", "None loaded"), ("Profile", "—")])
+        theme.rail_note(
+            ("AI mode enabled" if ai_available() else "AI mode off — deterministic answers")
+            + f" · {date.today():%b %d, %Y}"
         )
+    return selected
 
+
+def main() -> None:
+    _demo_autoload()
+    selected = _rail()
     router = {
-        PAGES[0]: page_upload,
-        PAGES[1]: page_preview,
-        PAGES[2]: page_audit,
-        PAGES[3]: page_issues,
-        PAGES[4]: page_analytics,
-        PAGES[5]: page_comparison,
-        PAGES[6]: page_chat,
-        PAGES[7]: page_insights,
-        PAGES[8]: page_report,
-        PAGES[9]: page_exports,
-        PAGES[10]: page_config_help,
+        "Upload & Profile": page_upload,
+        "Data Preview": page_preview,
+        "Audit Dashboard": page_audit,
+        "Issue Explorer": page_issues,
+        "Analytics Dashboard": page_analytics,
+        "Period Comparison": page_comparison,
+        "Analyst Chat": page_chat,
+        "Proactive Insights": page_insights,
+        "Report Builder": page_report,
+        "Export Center": page_exports,
+        "Configuration Help": page_config_help,
     }
-    router[page]()
+    router[selected]()
 
 
 main()

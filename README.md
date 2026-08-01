@@ -33,9 +33,9 @@ The app ships with a validated, colorblind-safe design system ([docs/design_syst
 |---|---|
 | ![Audit dashboard](screenshots/02_audit_dashboard.png) | ![Analytics dashboard](screenshots/04_analytics_dashboard.png) |
 
-| AI Analyst Chat | Proactive Insights |
+| Analyst Chat | Proactive Insights |
 |---|---|
-| ![AI analyst chat](screenshots/05_ai_analyst_chat.png) | ![Proactive insights](screenshots/06_proactive_insights.png) |
+| ![Analyst chat](screenshots/05_analyst_chat.png) | ![Proactive insights](screenshots/06_proactive_insights.png) |
 
 More in [screenshots/](screenshots/) — regenerate with `uv run python scripts/capture_screenshots.py`.
 

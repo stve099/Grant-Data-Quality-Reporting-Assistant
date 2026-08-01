@@ -32,9 +32,10 @@ PAGES = [
     ("Audit Dashboard", "02_audit_dashboard.png"),
     ("Issue Explorer", "03_issue_explorer.png"),
     ("Analytics Dashboard", "04_analytics_dashboard.png"),
-    ("AI Analyst Chat", "05_ai_analyst_chat.png"),
+    ("Analyst Chat", "05_analyst_chat.png"),
     ("Proactive Insights", "06_proactive_insights.png"),
     ("Report Builder", "07_report_builder.png"),
+    ("Configuration Help", "08_configuration_help.png"),
 ]
 
 
