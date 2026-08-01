@@ -19,17 +19,32 @@ All included data is **synthetic** — no real client information exists anywher
 | Module | Capability |
 |---|---|
 | **Data Quality Audit** | 27 configurable rules across completeness, uniqueness, validity, consistency, case management, timeliness, and statistical anomaly detection. Severity levels, blocking rules, per-category and per-program scores, row-level exports, remediation guidance. |
-| **Analytics** | Deterministic enrollment/exit/outcome/income/follow-up/demographic metrics, program comparisons, monthly trends, and goal-vs-actual performance measures — every number computed in transparent, tested pandas code. |
-| **AI Data Analyst Agent** | A Senior-Analyst-style agent that answers questions, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries — grounded exclusively in the calculated metrics. Works fully offline in non-AI mode. |
-| **Report Generator** | Polished HTML report with embedded interactive Plotly charts, Microsoft Word report, Excel audit workbook (with a correction template), and Excel analytics workbook. |
+| **Analytics** | Deterministic enrollment/exit/outcome/income/follow-up/demographic metrics, program comparisons, monthly trends, period-over-period deltas, and goal-vs-actual performance measures (grant-wide or program-scoped) — every number computed in transparent, tested pandas code. |
+| **AI Data Analyst Agent** | A Senior-Analyst-style agent with **typed tool use**: Claude retrieves exact values through read-only tools over the calculated results, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries. Works fully offline in non-AI mode. |
+| **Report Generator** | Polished HTML report with embedded interactive Plotly charts (CDN or fully offline), **PDF export** via headless browser, Microsoft Word report, Excel audit workbook (with a correction template), and Excel analytics workbook. |
 | **Grant Profiles** | YAML configuration drives everything: field mappings, program aliases, controlled vocabularies, follow-up schedules, performance targets, destination categories, severity overrides, and blocking rules. Two example profiles included. |
-| **Interfaces** | A 10-page Streamlit web app and a full-featured Typer CLI. |
+| **Interfaces** | An 11-page Streamlit web app, a full-featured Typer CLI, an **MCP server**, and a Docker image. |
+
+## Screenshots
+
+The app ships with a validated, colorblind-safe design system ([docs/design_system.md](docs/design_system.md)).
+
+| Audit Dashboard | Analytics Dashboard |
+|---|---|
+| ![Audit dashboard](screenshots/02_audit_dashboard.png) | ![Analytics dashboard](screenshots/04_analytics_dashboard.png) |
+
+| AI Analyst Chat | Proactive Insights |
+|---|---|
+| ![AI analyst chat](screenshots/05_ai_analyst_chat.png) | ![Proactive insights](screenshots/06_proactive_insights.png) |
+
+More in [screenshots/](screenshots/) — regenerate with `uv run python scripts/capture_screenshots.py`.
 
 ### Example outputs
 
 Generated from the included flawed sample file (no API key needed) — see [`examples/`](examples/):
 
 - [`examples/grant_report.html`](examples/grant_report.html) — full grant report with interactive charts
+- [`examples/grant_report.pdf`](examples/grant_report.pdf) — PDF rendering of the same report
 - [`examples/grant_report.docx`](examples/grant_report.docx) — Word version of the same report
 - [`examples/audit_workbook.xlsx`](examples/audit_workbook.xlsx) — audit findings + flagged-record correction template
 - [`examples/analytics_summary.xlsx`](examples/analytics_summary.xlsx) — analytics summary workbook
@@ -72,6 +87,7 @@ uv run grant-assistant analyze sample_data/housing_program_flawed.csv --profile 
 uv run grant-assistant report  sample_data/housing_program_flawed.csv --profile rapid_rehousing
 uv run grant-assistant ask     sample_data/housing_program_flawed.csv "Which program had the best outcomes?"
 uv run grant-assistant insights sample_data/housing_program_flawed.csv --profile housing_stability
+uv run grant-assistant compare current_period.csv prior_period.csv --profile housing_stability
 
 # Utilities
 uv run grant-assistant generate-sample-data
@@ -251,27 +267,38 @@ errors and runs a CLI smoke pipeline on every push.
 
 ---
 
+## Deployment extras
+
+```bash
+# Docker (Streamlit app on port 8501)
+docker build -t grant-assistant . && docker run -p 8501:8501 grant-assistant
+
+# PDF backend (Playwright Chromium; on Windows, Microsoft Edge is used automatically)
+uv sync --extra pdf && uv run playwright install chromium
+
+# MCP server (audit/analyze/report/ask tools for Claude Desktop, Claude Code, etc.)
+uv sync --extra mcp && uv run grant-assistant-mcp
+```
+
+Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISHING.md).
+
 ## Limitations
 
-- PDF export is not included (HTML + Word cover the reporting need; PDF generation on
-  Windows without heavyweight dependencies is unreliable). Print the HTML report to PDF
-  from a browser if needed.
-- The Word report contains tables and narrative but not chart images (charts live in the
-  HTML report and dashboards).
+- The Word report contains tables and narrative but not chart images (interactive charts
+  live in the HTML/PDF reports and dashboards).
 - Statistical trend rules (volume anomalies) use simple z-score/IQR heuristics, not
   forecasting models.
-- Performance measures evaluate at grant level, not per program.
 - One enrollment row per client per program-stay is assumed (HMIS-style extract);
   multi-table exports would need flattening first.
+- Live AI calls require an Anthropic API key; the AI path is tested against a fake
+  provider, while the deterministic non-AI mode is the fully tested default.
 
 ## Roadmap
 
-- Reporting-period-over-period comparisons
-- Per-program performance targets
-- MCP server exposing audit/report tools
 - PowerPoint executive summary export
 - Local LLM provider (OpenAI-compatible endpoint)
-- Docker image
+- Chart images inside the Word report
+- Scheduled audits with email summaries
 
 ---
 

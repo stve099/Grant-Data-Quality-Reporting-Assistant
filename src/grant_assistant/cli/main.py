@@ -186,15 +186,18 @@ def report(
     config_dir: ConfigDirOpt = None,
     output: OutputOpt = Path("output"),
     fmt: Annotated[
-        str, typer.Option("--format", "-f", help="Report formats: html, docx, or all.")
+        str, typer.Option("--format", "-f", help="Report formats: html, docx, pdf, or all.")
     ] = "all",
+    offline_charts: Annotated[
+        bool, typer.Option(help="Embed plotly.js in the HTML report so charts work offline.")
+    ] = False,
     ai: Annotated[
         bool, typer.Option(help="Use the AI provider for narrative if configured.")
     ] = True,
 ) -> None:
-    """Generate the grant outcome report (HTML and/or Word) plus Excel workbooks."""
-    if fmt not in {"html", "docx", "all"}:
-        typer.secho("--format must be html, docx, or all", fg=typer.colors.RED, err=True)
+    """Generate the grant outcome report (HTML/Word/PDF) plus Excel workbooks."""
+    if fmt not in {"html", "docx", "pdf", "all"}:
+        typer.secho("--format must be html, docx, pdf, or all", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     result = _run(data_file, profile, config_dir)
     agent = result.make_agent(use_ai=ai)
@@ -204,19 +207,31 @@ def report(
     )
 
     from grant_assistant.reporting import (
+        PdfBackendError,
         build_report_data,
         write_analytics_workbook,
         write_audit_workbook,
         write_docx_report,
         write_html_report,
+        write_pdf_report,
     )
 
     data = build_report_data(result.analytics, result.audit, result.profile, agent)
     written: list[Path] = []
     if fmt in {"html", "all"}:
-        written.append(write_html_report(data, output / "grant_report.html"))
+        written.append(
+            write_html_report(data, output / "grant_report.html", offline_charts=offline_charts)
+        )
     if fmt in {"docx", "all"}:
         written.append(write_docx_report(data, output / "grant_report.docx"))
+    if fmt == "pdf" or fmt == "all":
+        try:
+            written.append(write_pdf_report(data, output / "grant_report.pdf"))
+        except PdfBackendError as exc:
+            if fmt == "pdf":
+                typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=2) from exc
+            typer.secho(f"Skipping PDF: {exc}", fg=typer.colors.YELLOW)
     written.append(
         write_audit_workbook(result.audit, result.prepared, output / "audit_workbook.xlsx")
     )
@@ -302,6 +317,44 @@ def full_run(
     _echo_header("Generated files")
     for path in files:
         typer.secho(f"  {path}", fg=typer.colors.GREEN)
+
+
+@app.command()
+def compare(
+    current_file: Annotated[Path, typer.Argument(help="Current-period CSV or Excel file.")],
+    prior_file: Annotated[Path, typer.Argument(help="Prior-period CSV or Excel file.")],
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+) -> None:
+    """Compare two reporting-period extracts (same profile) and show deltas."""
+    from grant_assistant.analytics.comparison import compare_analytics
+
+    current = _run(current_file, profile, config_dir)
+    prior = _run(prior_file, profile, config_dir)
+    comparison = compare_analytics(
+        current.analytics,
+        prior.analytics,
+        current_label=current_file.name,
+        prior_label=prior_file.name,
+    )
+
+    _echo_header(f"Period comparison — {current_file.name} vs {prior_file.name}")
+    for d in comparison.headline:
+        arrow = "→"
+        color = typer.colors.WHITE
+        if d.improved is True:
+            arrow, color = "↑", typer.colors.GREEN
+        elif d.improved is False:
+            arrow, color = "↓", typer.colors.RED
+        typer.secho(
+            f"{d.label:<34} {d.format_value(d.prior):>12}  {arrow}  "
+            f"{d.format_value(d.current):>12}"
+            + (f"   ({d.pct_change:+.1f}%)" if d.pct_change is not None else ""),
+            fg=color,
+        )
+    _echo_header("Narrative")
+    for line in comparison.narrative:
+        typer.echo(f"- {line}")
 
 
 @app.command("generate-sample-data")

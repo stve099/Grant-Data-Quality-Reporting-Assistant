@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.1.0 — 2026-08-01
+
+### Added
+- **AI agent tool use** — Claude can call typed, read-only tools (`get_metric`,
+  `compare_programs`, `get_measures`, `get_issue_summary`, `get_trends`,
+  `get_demographics`, `list_metrics`) over the deterministic results via an
+  agentic tool loop; tool outputs are aggregated and sanitized.
+- **Period-over-period comparison** — compare two extracts with the same profile:
+  headline deltas, per-program movement, deterministic narrative; new `compare`
+  CLI command and a Period Comparison page in the app.
+- **Program-scoped performance measures** — a measure may target one program
+  (`program:` in the profile); example RRH-6 added to the rapid_rehousing profile.
+- **PDF export** — grant report rendered through a headless browser (Playwright
+  Chromium via `--extra pdf`, or Microsoft Edge automatically on Windows);
+  `report --format pdf` and a Render PDF button in the Report Builder.
+- **Offline HTML charts** — `report --offline-charts` embeds plotly.js so the
+  HTML report works with no internet connection.
+- **MCP server** (`--extra mcp`, `grant-assistant-mcp`) exposing audit_dataset,
+  analyze_dataset, generate_report, and ask_analyst tools.
+- **Docker support** — Dockerfile + .dockerignore for the Streamlit app.
+- **Design system** — validated colorblind-safe palette applied across charts,
+  the Streamlit theme, and reports (docs/design_system.md); design tokens
+  published as a Claude Design project; screenshot capture script and README
+  screenshots.
+- 18 new tests (tool set, tool-loop contract, comparison math, program-scoped
+  measures, PDF rendering, offline charts, MCP registration).
+
 ## 1.0.0 — 2026-08-01
 
 Initial release.

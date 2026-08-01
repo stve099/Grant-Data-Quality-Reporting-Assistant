@@ -1,0 +1,39 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Grant Assistant — Severity & Status Badges</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f9f9f7; margin: 0; padding: 24px; color: #0b0b0b; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: #52514e; margin: 18px 0 10px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .critical { background: #fbe4e4; color: #d03b3b; }
+  .high     { background: #fdeae2; color: #b85a33; }
+  .medium   { background: #fdf3d9; color: #8a6206; }
+  .low      { background: #ececea; color: #52514e; }
+  .info     { background: #f0efec; color: #898781; }
+  .met      { background: #e2f4e2; color: #006300; }
+  .missed   { background: #fbe4e4; color: #d03b3b; }
+  .neutral  { background: #f0efec; color: #52514e; }
+</style>
+</head>
+<body>
+  <h2>Severity (icon + label — never color alone)</h2>
+  <div class="row">
+    <span class="badge critical">● Critical</span>
+    <span class="badge high">● High</span>
+    <span class="badge medium">● Medium</span>
+    <span class="badge low">● Low</span>
+    <span class="badge info">● Informational</span>
+  </div>
+  <h2>Measure status</h2>
+  <div class="row">
+    <span class="badge met">✓ Met</span>
+    <span class="badge missed">✗ Not met</span>
+    <span class="badge neutral">— No data</span>
+    <span class="badge neutral">⚠ Small sample</span>
+  </div>
+</body>
+</html>

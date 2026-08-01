@@ -117,7 +117,17 @@ performance_measures:
     target: 60
     unit: percent                    # percent | count | currency
     direction: at_least              # at_least | at_most
+  - id: M-2
+    name: RRH permanent housing rate
+    metric: permanent_housing_rate
+    target: 65
+    unit: percent
+    program: Rapid Re-Housing        # optional: scope the measure to one program
 ```
+
+Program-scoped measures (with `program:`) support these metrics: `enrollments`,
+`exits`, `exit_rate`, `successful_exit_rate`, `permanent_housing_rate`,
+`avg_income_change`, `median_income_change`.
 
 Available metric keys:
 `total_enrollments, households_served, total_exits, exit_rate, successful_exit_rate,

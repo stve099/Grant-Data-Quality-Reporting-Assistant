@@ -14,8 +14,9 @@ from grant_assistant.reporting.context import ReportData
 
 logger = logging.getLogger(__name__)
 
-BRAND = RGBColor(0x1E, 0x3A, 0x8A)
-MUTED = RGBColor(0x64, 0x74, 0x8B)
+# Tokens from docs/design_system.md (brand-deep blue, secondary ink).
+BRAND = RGBColor(0x1C, 0x5C, 0xAB)
+MUTED = RGBColor(0x52, 0x51, 0x4E)
 
 
 def _fmt(value: float | int | None, unit: str = "") -> str:

@@ -1,10 +1,19 @@
 """Interactive Plotly charts built from deterministic analytics results.
 
-Every chart takes a computed :class:`AnalyticsResult` or
-:class:`AuditResult` — charts never re-derive numbers from raw data.
+Every chart takes a computed :class:`AnalyticsResult` or :class:`AuditResult`
+— charts never re-derive numbers from raw data.
+
+Styling follows a validated design system (see docs/design_system.md):
+categorical hues are assigned in a fixed, colorblind-safe order and never
+cycled; severity/status colors are reserved and never reused for series;
+magnitude uses a single sequential hue; chrome (grid, axes, labels) stays
+recessive. The categorical order passes CVD-separation and normal-vision
+gates on the light surface (validated with the palette validator).
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import plotly.graph_objects as go
 
@@ -12,36 +21,79 @@ from grant_assistant import schema
 from grant_assistant.analytics.metrics import AnalyticsResult
 from grant_assistant.models import SEVERITY_ORDER, AuditResult
 
-# Consistent, colorblind-safe palette used across all charts.
-PALETTE = {
-    "primary": "#2563eb",  # blue
-    "secondary": "#0d9488",  # teal
-    "accent": "#d97706",  # amber
-    "positive": "#16a34a",  # green
-    "negative": "#dc2626",  # red
-    "neutral": "#64748b",  # slate
-    "muted": "#cbd5e1",
-}
+if TYPE_CHECKING:
+    from grant_assistant.analytics.comparison import ComparisonResult
 
+# -- Design tokens -----------------------------------------------------------
+
+#: Categorical series slots — fixed order, colorblind-safe, never cycled.
+SERIES = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300")
+
+#: Sequential single hue (magnitude), light -> dark steps.
+SEQ = {"100": "#cde2fb", "250": "#86b6ef", "400": "#3987e5", "450": "#2a78d6", "550": "#1c5cab"}
+
+#: Status colors — reserved for state, never used as series colors.
+STATUS = {"good": "#0ca30c", "warning": "#fab219", "serious": "#ec835a", "critical": "#d03b3b"}
+
+SURFACE = "#fcfcfb"
+INK = "#0b0b0b"
+INK_SECONDARY = "#52514e"
+INK_MUTED = "#898781"
+GRID = "#e1e0d9"
+BASELINE = "#c3c2b7"
+
+#: Severity -> status mapping (state semantics, paired with axis labels).
 SEVERITY_COLORS = {
-    "critical": "#991b1b",
-    "high": "#dc2626",
-    "medium": "#d97706",
-    "low": "#eab308",
-    "info": "#64748b",
+    "critical": STATUS["critical"],
+    "high": STATUS["serious"],
+    "medium": STATUS["warning"],
+    "low": INK_MUTED,
+    "info": BASELINE,
 }
 
-_LAYOUT = {
-    "template": "plotly_white",
-    "font": {"family": "Segoe UI, Arial, sans-serif", "size": 13},
-    "margin": {"l": 60, "r": 30, "t": 60, "b": 60},
-    "hoverlabel": {"bgcolor": "white"},
+_FONT = {"family": 'system-ui, -apple-system, "Segoe UI", sans-serif', "size": 13, "color": INK}
+
+_AXIS = {
+    "gridcolor": GRID,
+    "linecolor": BASELINE,
+    "zerolinecolor": BASELINE,
+    "tickfont": {"color": INK_SECONDARY, "size": 12},
+    "title_font": {"color": INK_SECONDARY, "size": 12},
 }
 
 
-def _base(fig: go.Figure, title: str) -> go.Figure:
-    fig.update_layout(title={"text": title, "x": 0.02}, **_LAYOUT)
+def _base(fig: go.Figure, title: str, legend: bool = True) -> go.Figure:
+    """Apply shared chrome: surface, ink, recessive grid, hover styling."""
+    fig.update_layout(
+        title={"text": title, "x": 0.02, "font": {"size": 16, "color": INK}},
+        template="plotly_white",
+        font=_FONT,
+        paper_bgcolor=SURFACE,
+        plot_bgcolor=SURFACE,
+        margin={"l": 60, "r": 24, "t": 56, "b": 52},
+        hoverlabel={"bgcolor": "#ffffff", "bordercolor": GRID, "font": {"color": INK}},
+        showlegend=legend,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.0, "xanchor": "right", "x": 1.0},
+        bargap=0.35,
+        bargroupgap=0.12,
+    )
+    fig.update_xaxes(**_AXIS)
+    fig.update_yaxes(**_AXIS)
     return fig
+
+
+def _bar(name: str, x: list, y: list, color: str, horizontal: bool = False) -> go.Bar:
+    """A bar trace with the 2px surface gap between fills."""
+    return go.Bar(
+        name=name,
+        x=x,
+        y=y,
+        orientation="h" if horizontal else "v",
+        marker={"color": color, "line": {"color": SURFACE, "width": 2}},
+    )
+
+
+# -- Charts ------------------------------------------------------------------
 
 
 def program_comparison_chart(analytics: AnalyticsResult) -> go.Figure:
@@ -49,23 +101,13 @@ def program_comparison_chart(analytics: AnalyticsResult) -> go.Figure:
     programs = [p.program for p in analytics.programs]
     fig = go.Figure(
         [
-            go.Bar(
-                name="Enrollments",
-                x=programs,
-                y=[p.enrollments for p in analytics.programs],
-                marker_color=PALETTE["primary"],
-            ),
-            go.Bar(
-                name="Exits",
-                x=programs,
-                y=[p.exits for p in analytics.programs],
-                marker_color=PALETTE["secondary"],
-            ),
-            go.Bar(
-                name="Successful exits",
-                x=programs,
-                y=[p.successful_exits for p in analytics.programs],
-                marker_color=PALETTE["positive"],
+            _bar("Enrollments", programs, [p.enrollments for p in analytics.programs], SERIES[0]),
+            _bar("Exits", programs, [p.exits for p in analytics.programs], SERIES[1]),
+            _bar(
+                "Successful exits",
+                programs,
+                [p.successful_exits for p in analytics.programs],
+                SERIES[2],
             ),
         ]
     )
@@ -78,17 +120,17 @@ def outcome_rate_chart(analytics: AnalyticsResult) -> go.Figure:
     programs = [p.program for p in analytics.programs]
     fig = go.Figure(
         [
-            go.Bar(
-                name="Successful exit rate",
-                x=programs,
-                y=[p.successful_exit_rate for p in analytics.programs],
-                marker_color=PALETTE["positive"],
+            _bar(
+                "Successful exit rate",
+                programs,
+                [p.successful_exit_rate for p in analytics.programs],
+                SERIES[0],
             ),
-            go.Bar(
-                name="Permanent housing rate",
-                x=programs,
-                y=[p.permanent_housing_rate for p in analytics.programs],
-                marker_color=PALETTE["primary"],
+            _bar(
+                "Permanent housing rate",
+                programs,
+                [p.permanent_housing_rate for p in analytics.programs],
+                SERIES[2],
             ),
         ]
     )
@@ -97,7 +139,7 @@ def outcome_rate_chart(analytics: AnalyticsResult) -> go.Figure:
 
 
 def enrollment_trend_chart(analytics: AnalyticsResult) -> go.Figure:
-    """Monthly enrollments and exits over time."""
+    """Monthly enrollments and exits over time with a unified crosshair hover."""
     months = sorted(set(analytics.monthly_enrollments) | set(analytics.monthly_exits))
     fig = go.Figure(
         [
@@ -106,38 +148,35 @@ def enrollment_trend_chart(analytics: AnalyticsResult) -> go.Figure:
                 x=months,
                 y=[analytics.monthly_enrollments.get(m, 0) for m in months],
                 mode="lines+markers",
-                line={"color": PALETTE["primary"], "width": 3},
+                line={"color": SERIES[0], "width": 2},
+                marker={"size": 8, "line": {"color": SURFACE, "width": 2}},
             ),
             go.Scatter(
                 name="Exits",
                 x=months,
                 y=[analytics.monthly_exits.get(m, 0) for m in months],
                 mode="lines+markers",
-                line={"color": PALETTE["accent"], "width": 3},
+                line={"color": SERIES[1], "width": 2},
+                marker={"size": 8, "line": {"color": SURFACE, "width": 2}},
             ),
         ]
     )
-    fig.update_layout(yaxis_title="Clients per month", xaxis_title="Month")
+    fig.update_layout(yaxis_title="Clients per month", xaxis_title="Month", hovermode="x unified")
     return _base(fig, "Enrollment and Exit Trends")
 
 
 def exit_destination_chart(analytics: AnalyticsResult) -> go.Figure:
-    """Horizontal bar of exit destinations, most common first."""
+    """Horizontal bar of exit destinations, most common first (single measure)."""
     items = sorted(analytics.exit_destination_breakdown.items(), key=lambda kv: kv[1])
     fig = go.Figure(
-        go.Bar(
-            x=[v for _, v in items],
-            y=[k for k, _ in items],
-            orientation="h",
-            marker_color=PALETTE["secondary"],
-        )
+        _bar("Exits", [v for _, v in items], [k for k, _ in items], SEQ["450"], horizontal=True)
     )
-    fig.update_layout(xaxis_title="Exits", height=max(360, 40 * len(items) + 120))
-    return _base(fig, "Exit Destination Breakdown")
+    fig.update_layout(xaxis_title="Exits", height=max(360, 34 * len(items) + 120))
+    return _base(fig, "Exit Destination Breakdown", legend=False)
 
 
 def demographic_chart(analytics: AnalyticsResult, field: str) -> go.Figure:
-    """Bar chart for one demographic field (or 'age_groups')."""
+    """Bar chart for one demographic field (or 'age_groups' / 'household_size')."""
     if field == "age_groups":
         counts = analytics.age_groups
         title = "Clients by Age Group"
@@ -147,15 +186,9 @@ def demographic_chart(analytics: AnalyticsResult, field: str) -> go.Figure:
     else:
         counts = analytics.demographics.get(field, {})
         title = f"Clients by {schema.label_for(field)}"
-    fig = go.Figure(
-        go.Bar(
-            x=list(counts.keys()),
-            y=list(counts.values()),
-            marker_color=PALETTE["primary"],
-        )
-    )
+    fig = go.Figure(_bar("Clients", list(counts.keys()), list(counts.values()), SEQ["450"]))
     fig.update_layout(yaxis_title="Clients")
-    return _base(fig, title)
+    return _base(fig, title, legend=False)
 
 
 def income_change_chart(analytics: AnalyticsResult) -> go.Figure:
@@ -164,37 +197,33 @@ def income_change_chart(analytics: AnalyticsResult) -> go.Figure:
         go.Histogram(
             x=analytics.income_changes,
             nbinsx=30,
-            marker_color=PALETTE["primary"],
+            name="Households",
+            marker={"color": SEQ["400"], "line": {"color": SURFACE, "width": 2}},
         )
     )
-    fig.add_vline(x=0, line_dash="dash", line_color=PALETTE["neutral"])
+    fig.add_vline(x=0, line_dash="dash", line_color=INK_MUTED)
     if analytics.median_income_change is not None:
         fig.add_vline(
             x=analytics.median_income_change,
-            line_color=PALETTE["positive"],
-            annotation_text=f"Median: ${analytics.median_income_change:,.0f}",
+            line_color=INK,
+            annotation_text=f"Median ${analytics.median_income_change:,.0f}",
+            annotation_font_color=INK_SECONDARY,
         )
     fig.update_layout(xaxis_title="Income change ($, exit − entry)", yaxis_title="Households")
-    return _base(fig, "Income Change at Exit")
+    return _base(fig, "Income Change at Exit", legend=False)
 
 
 def followup_chart(analytics: AnalyticsResult) -> go.Figure:
-    """Completion vs overdue counts for each follow-up milestone."""
+    """Completed vs overdue vs pending counts for each follow-up milestone."""
     labels = [f.label for f in analytics.followups]
+    completed = [f.completed_of_due for f in analytics.followups]
+    overdue = [f.overdue for f in analytics.followups]
+    pending = [f.due - f.completed_of_due - f.overdue for f in analytics.followups]
     fig = go.Figure(
         [
-            go.Bar(
-                name="Completed",
-                x=labels,
-                y=[f.completed_of_due for f in analytics.followups],
-                marker_color=PALETTE["positive"],
-            ),
-            go.Bar(
-                name="Overdue",
-                x=labels,
-                y=[f.overdue for f in analytics.followups],
-                marker_color=PALETTE["negative"],
-            ),
+            _bar("Completed", labels, completed, SERIES[0]),
+            _bar("In grace window", labels, pending, BASELINE),
+            _bar("Overdue ⚠", labels, overdue, STATUS["critical"]),
         ]
     )
     fig.update_layout(barmode="stack", yaxis_title="Clients due")
@@ -202,37 +231,48 @@ def followup_chart(analytics: AnalyticsResult) -> go.Figure:
 
 
 def dq_severity_chart(audit: AuditResult) -> go.Figure:
-    """Findings by severity level."""
+    """Findings by severity level (status colors + explicit axis labels)."""
     counts = audit.issue_count_by_severity
     labels = [s.label for s in SEVERITY_ORDER]
     fig = go.Figure(
         go.Bar(
             x=labels,
             y=[counts[s.value] for s in SEVERITY_ORDER],
-            marker_color=[SEVERITY_COLORS[s.value] for s in SEVERITY_ORDER],
+            marker={
+                "color": [SEVERITY_COLORS[s.value] for s in SEVERITY_ORDER],
+                "line": {"color": SURFACE, "width": 2},
+            },
+            text=[counts[s.value] or "" for s in SEVERITY_ORDER],
+            textposition="outside",
+            textfont={"color": INK_SECONDARY},
         )
     )
     fig.update_layout(yaxis_title="Findings")
-    return _base(fig, "Data Quality Findings by Severity")
+    return _base(fig, "Data Quality Findings by Severity", legend=False)
 
 
 def dq_category_chart(audit: AuditResult) -> go.Figure:
-    """Data quality score by category."""
+    """Data quality score by category (single sequential hue)."""
     items = sorted(audit.score_by_category.items(), key=lambda kv: kv[1])
     fig = go.Figure(
-        go.Bar(
-            x=[v for _, v in items],
-            y=[k.replace("_", " ").title() for k, _ in items],
-            orientation="h",
-            marker_color=PALETTE["primary"],
+        _bar(
+            "Score",
+            [v for _, v in items],
+            [k.replace("_", " ").title() for k, _ in items],
+            SEQ["450"],
+            horizontal=True,
         )
     )
-    fig.update_layout(xaxis_title="Score (100 = clean)", xaxis_range=[0, 100])
-    return _base(fig, "Data Quality Score by Category")
+    fig.update_layout(xaxis_title="Score (100 = clean)", xaxis_range=[0, 105])
+    return _base(fig, "Data Quality Score by Category", legend=False)
 
 
 def goal_vs_actual_chart(analytics: AnalyticsResult) -> go.Figure:
-    """Horizontal bars comparing each performance measure to its target."""
+    """Actual vs target per performance measure.
+
+    Status color carries met/not-met but never alone: the companion measures
+    table and hover text state the status explicitly.
+    """
     measures = [m for m in analytics.measures if m.actual is not None]
     names = [m.name for m in measures]
     fig = go.Figure(
@@ -242,26 +282,60 @@ def goal_vs_actual_chart(analytics: AnalyticsResult) -> go.Figure:
                 x=[m.actual for m in measures],
                 y=names,
                 orientation="h",
-                marker_color=[
-                    PALETTE["positive"] if m.met else PALETTE["negative"] for m in measures
-                ],
+                marker={
+                    "color": [STATUS["good"] if m.met else STATUS["critical"] for m in measures],
+                    "line": {"color": SURFACE, "width": 2},
+                },
+                text=[("✓ Met" if m.met else "✗ Not met") for m in measures],
+                textposition="auto",
+                hovertemplate="%{y}<br>Actual: %{x}<br>%{text}<extra></extra>",
             ),
             go.Bar(
                 name="Target",
                 x=[m.target for m in measures],
                 y=names,
                 orientation="h",
-                marker_color=PALETTE["muted"],
+                marker={"color": GRID, "line": {"color": SURFACE, "width": 2}},
             ),
         ]
     )
     fig.update_layout(
         barmode="group",
         xaxis_title="Value",
-        height=max(360, 60 * len(names) + 120),
+        height=max(360, 60 * len(names) + 130),
         legend={"traceorder": "normal"},
     )
     return _base(fig, "Performance Measures: Goal vs. Actual")
+
+
+def comparison_chart(comparison: ComparisonResult) -> go.Figure:
+    """Current vs prior period for the headline rate metrics."""
+    rates = [d for d in comparison.headline if d.unit == "percent" and d.current is not None]
+    names = [d.label for d in rates]
+    fig = go.Figure(
+        [
+            go.Bar(
+                name=comparison.prior_label,
+                x=[d.prior for d in rates],
+                y=names,
+                orientation="h",
+                marker={"color": BASELINE, "line": {"color": SURFACE, "width": 2}},
+            ),
+            go.Bar(
+                name=comparison.current_label,
+                x=[d.current for d in rates],
+                y=names,
+                orientation="h",
+                marker={"color": SERIES[0], "line": {"color": SURFACE, "width": 2}},
+            ),
+        ]
+    )
+    fig.update_layout(
+        barmode="group",
+        xaxis_title="%",
+        height=max(360, 60 * len(names) + 130),
+    )
+    return _base(fig, "Period-over-Period Comparison")
 
 
 def standard_chart_set(

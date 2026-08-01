@@ -1,0 +1,26 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Grant Assistant — KPI Tiles</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f9f9f7; margin: 0; padding: 24px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+  .kpi { background: #fcfcfb; border: 1px solid #e1e0d9; border-radius: 12px; padding: 14px 16px 12px; box-shadow: 0 1px 2px rgba(11,11,11,.04); }
+  .kpi .label { font-size: 13px; color: #52514e; }
+  .kpi .value { font-size: 30px; font-weight: 700; color: #1c5cab; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .kpi .delta { font-size: 12px; margin-top: 4px; }
+  .delta.up { color: #006300; }
+  .delta.down { color: #d03b3b; }
+</style>
+</head>
+<body>
+  <div class="kpis">
+    <div class="kpi"><div class="label">Overall score</div><div class="value">85.1/100</div><div class="delta up">▲ +2.3 vs prior period</div></div>
+    <div class="kpi"><div class="label">Enrollments</div><div class="value">260</div><div class="delta up">▲ +12</div></div>
+    <div class="kpi"><div class="label">Successful exit rate</div><div class="value">64.1%</div><div class="delta down">▼ −1.7 pts</div></div>
+    <div class="kpi"><div class="label">Overdue follow-ups</div><div class="value">12</div><div class="delta down">▼ needs attention</div></div>
+  </div>
+</body>
+</html>

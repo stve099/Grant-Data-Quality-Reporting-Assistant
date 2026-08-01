@@ -52,12 +52,60 @@ st.set_page_config(
     layout="wide",
 )
 
+# Design-system chrome (tokens documented in docs/design_system.md).
+st.markdown(
+    """
+<style>
+:root {
+  --ga-surface: #fcfcfb; --ga-surface-2: #f0efec; --ga-ink: #0b0b0b;
+  --ga-ink-2: #52514e; --ga-muted: #898781; --ga-grid: #e1e0d9;
+  --ga-baseline: #c3c2b7; --ga-blue: #2a78d6; --ga-blue-deep: #1c5cab;
+  --ga-good: #0ca30c; --ga-critical: #d03b3b;
+}
+/* KPI tiles */
+div[data-testid="stMetric"] {
+  background: var(--ga-surface);
+  border: 1px solid var(--ga-grid);
+  border-radius: 12px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 1px 2px rgba(11,11,11,0.04);
+}
+div[data-testid="stMetric"] label { color: var(--ga-ink-2); }
+div[data-testid="stMetricValue"] {
+  color: var(--ga-blue-deep);
+  font-variant-numeric: tabular-nums;
+}
+/* Headings */
+h1, h2, h3 { color: var(--ga-ink); letter-spacing: -0.01em; }
+h1 { font-weight: 700; }
+/* Sidebar */
+section[data-testid="stSidebar"] {
+  background: var(--ga-surface-2);
+  border-right: 1px solid var(--ga-grid);
+}
+section[data-testid="stSidebar"] .stRadio label { color: var(--ga-ink); }
+/* Buttons */
+button[kind="primary"] { border-radius: 8px; }
+/* Dataframes: hairline border to sit on the surface */
+div[data-testid="stDataFrame"] {
+  border: 1px solid var(--ga-grid);
+  border-radius: 10px;
+  overflow: hidden;
+}
+/* Tabs underline in brand blue */
+button[data-baseweb="tab"][aria-selected="true"] { color: var(--ga-blue-deep); }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 PAGES = [
     "🏠 Upload & Profile",
     "🔎 Data Preview",
     "🧪 Audit Dashboard",
     "🗂️ Issue Explorer",
     "📈 Analytics Dashboard",
+    "🔁 Period Comparison",
     "💬 AI Analyst Chat",
     "🧠 Proactive Insights",
     "📄 Report Builder",
@@ -458,6 +506,83 @@ def page_analytics() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Page: Period Comparison
+# ---------------------------------------------------------------------------
+
+
+def page_comparison() -> None:
+    st.header("Period Comparison")
+    if not _require_data():
+        return
+    p = st.session_state["pipeline"]
+    st.markdown(
+        f"The currently loaded file (**{p['filename']}**) is treated as the *current* "
+        "period. Upload a **prior-period extract** (same layout, same profile) to compare."
+    )
+    prior_upload = st.file_uploader(
+        "Prior-period CSV or Excel extract",
+        type=["csv", "xlsx", "xls", "xlsm"],
+        key="prior_upload",
+    )
+    if prior_upload is None:
+        st.info("Upload a prior-period file to compute deltas.")
+        return
+    from grant_assistant.analytics.charts import comparison_chart
+    from grant_assistant.analytics.comparison import compare_analytics
+
+    try:
+        prior_raw = load_dataset(io.BytesIO(prior_upload.getvalue()), filename=prior_upload.name)
+        prior_prepared = prepare_dataset(prior_raw, p["profile"])
+        prior_analytics = compute_analytics(prior_prepared, p["profile"])
+    except (IngestionError, ProfileValidationError) as exc:
+        st.error(str(exc))
+        return
+    comparison = compare_analytics(
+        p["analytics"],
+        prior_analytics,
+        current_label=p["filename"],
+        prior_label=prior_upload.name,
+    )
+
+    st.subheader("Headline metrics")
+    rows = []
+    for d in comparison.headline:
+        trend = "—"
+        if d.improved is True:
+            trend = "▲ improved"
+        elif d.improved is False:
+            trend = "▼ declined"
+        rows.append(
+            {
+                "Metric": d.label,
+                "Prior": d.format_value(d.prior),
+                "Current": d.format_value(d.current),
+                "Change": d.format_value(d.delta) if d.delta is not None else "n/a",
+                "Trend": trend,
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    st.plotly_chart(comparison_chart(comparison), use_container_width=True)
+
+    st.subheader("Program movement (successful-exit rate)")
+    prog_rows = [
+        {
+            "Program": pr.program,
+            "Prior rate": f"{pr.prior_rate}%" if pr.prior_rate is not None else "n/a",
+            "Current rate": f"{pr.current_rate}%" if pr.current_rate is not None else "n/a",
+            "Delta (pts)": pr.delta if pr.delta is not None else "n/a",
+            "Small sample": "⚠️" if pr.small_sample else "",
+        }
+        for pr in comparison.programs
+    ]
+    st.dataframe(pd.DataFrame(prog_rows), use_container_width=True)
+
+    st.subheader("Narrative")
+    for line in comparison.narrative:
+        st.markdown(f"- {line}")
+
+
+# ---------------------------------------------------------------------------
 # Page: AI Analyst Chat
 # ---------------------------------------------------------------------------
 
@@ -585,7 +710,7 @@ def page_report() -> None:
     if "report_html" in st.session_state:
         st.subheader("Executive summary preview")
         st.write(st.session_state["report_summary"])
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         col1.download_button(
             "Download HTML report",
             data=st.session_state["report_html"].encode("utf-8"),
@@ -598,6 +723,30 @@ def page_report() -> None:
             file_name="grant_report.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
+        with col3:
+            from grant_assistant.reporting import PdfBackendError, pdf_backend, write_pdf_report
+
+            if "report_pdf" in st.session_state:
+                st.download_button(
+                    "Download PDF report",
+                    data=st.session_state["report_pdf"],
+                    file_name="grant_report.pdf",
+                    mime="application/pdf",
+                )
+            elif pdf_backend() is None:
+                st.caption(
+                    "PDF export needs a headless browser: `uv sync --extra pdf` then "
+                    "`uv run playwright install chromium` (or Microsoft Edge on Windows)."
+                )
+            elif st.button("Render PDF report"):
+                with st.spinner("Rendering PDF…"):
+                    try:
+                        data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
+                        pdf_path = write_pdf_report(data, _output_dir() / "grant_report.pdf")
+                        st.session_state["report_pdf"] = pdf_path.read_bytes()
+                        st.rerun()
+                    except PdfBackendError as exc:
+                        st.error(str(exc))
         with st.expander("Inline HTML preview"):
             st.components.v1.html(st.session_state["report_html"], height=650, scrolling=True)
 
@@ -806,11 +955,12 @@ def main() -> None:
         PAGES[2]: page_audit,
         PAGES[3]: page_issues,
         PAGES[4]: page_analytics,
-        PAGES[5]: page_chat,
-        PAGES[6]: page_insights,
-        PAGES[7]: page_report,
-        PAGES[8]: page_exports,
-        PAGES[9]: page_config_help,
+        PAGES[5]: page_comparison,
+        PAGES[6]: page_chat,
+        PAGES[7]: page_insights,
+        PAGES[8]: page_report,
+        PAGES[9]: page_exports,
+        PAGES[10]: page_config_help,
     }
     router[page]()
 

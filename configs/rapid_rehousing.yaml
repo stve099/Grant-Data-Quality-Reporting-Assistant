@@ -160,6 +160,14 @@ performance_measures:
     target: 80
     unit: percent
     direction: at_least
+  - id: RRH-6
+    name: Rapid Re-Housing permanent housing rate (program-scoped)
+    metric: permanent_housing_rate
+    target: 65
+    unit: percent
+    direction: at_least
+    program: Rapid Re-Housing
+    description: Permanent-housing exit rate evaluated for the Rapid Re-Housing program only.
 
 demographic_fields: [gender, race, ethnicity, veteran_status, disability_status]
 age_group_bounds: [18, 25, 35, 45, 55, 62]

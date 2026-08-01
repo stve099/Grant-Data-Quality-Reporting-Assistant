@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,58 @@ class AnthropicProvider:
             raise AIProviderError(f"Claude API call failed: {exc}") from exc
         parts = [block.text for block in response.content if block.type == "text"]
         return "\n".join(parts).strip()
+
+    def complete_with_tools(
+        self,
+        system: str,
+        messages: list[dict[str, str]],
+        tools: list[dict[str, Any]],
+        executor: Callable[[str, dict[str, Any] | None], str],
+        max_tokens: int = 1500,
+        max_rounds: int = 6,
+    ) -> str:
+        """Agentic loop: let the model call tools, feed results back, return text.
+
+        ``executor(name, input)`` runs a tool and returns its JSON result string;
+        executor errors are returned to the model as error tool results rather
+        than aborting the conversation.
+        """
+        convo: list[Any] = [{"role": m["role"], "content": m["content"]} for m in messages]
+        for _ in range(max_rounds):
+            try:
+                response = self._client.messages.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=convo,
+                    tools=tools,  # type: ignore[arg-type]
+                )
+            except Exception as exc:
+                raise AIProviderError(f"Claude API call failed: {exc}") from exc
+            if response.stop_reason != "tool_use":
+                parts = [b.text for b in response.content if b.type == "text"]
+                return "\n".join(parts).strip()
+            results: list[dict[str, Any]] = []
+            for block in response.content:
+                if block.type != "tool_use":
+                    continue
+                try:
+                    content = executor(block.name, dict(block.input or {}))  # type: ignore[arg-type]
+                    results.append(
+                        {"type": "tool_result", "tool_use_id": block.id, "content": content}
+                    )
+                except Exception as exc:
+                    results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": f"Tool error: {exc}",
+                            "is_error": True,
+                        }
+                    )
+            convo.append({"role": "assistant", "content": response.content})
+            convo.append({"role": "user", "content": results})
+        raise AIProviderError(f"Tool loop exceeded {max_rounds} rounds without a final answer.")
 
 
 def ai_available() -> bool:

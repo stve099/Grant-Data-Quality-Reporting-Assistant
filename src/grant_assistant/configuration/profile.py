@@ -66,7 +66,12 @@ class FollowUpDef(BaseModel):
 
 
 class PerformanceMeasure(BaseModel):
-    """A funder performance measure with a target value."""
+    """A funder performance measure with a target value.
+
+    When ``program`` is set, the metric is evaluated for that program only
+    (program-scoped metrics: enrollments, exits, exit_rate, successful_exit_rate,
+    permanent_housing_rate, avg_income_change, median_income_change).
+    """
 
     id: str
     name: str
@@ -74,6 +79,9 @@ class PerformanceMeasure(BaseModel):
     target: float
     unit: str = Field(default="percent", pattern="^(percent|count|currency)$")
     direction: str = Field(default="at_least", pattern="^(at_least|at_most)$")
+    program: str | None = Field(
+        default=None, description="Scope the measure to one program (canonical name)."
+    )
     description: str = ""
 
 
@@ -194,6 +202,13 @@ class GrantProfile(BaseModel):
         measure_ids = [m.id for m in self.performance_measures]
         if len(measure_ids) != len(set(measure_ids)):
             raise ValueError(f"duplicate performance measure ids: {measure_ids}")
+        program_names = set(names)
+        for measure in self.performance_measures:
+            if measure.program is not None and measure.program not in program_names:
+                raise ValueError(
+                    f"performance measure '{measure.id}' targets unknown program "
+                    f"'{measure.program}' (known: {sorted(program_names)})"
+                )
         return self
 
     # -- Convenience lookups -------------------------------------------------

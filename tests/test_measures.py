@@ -79,6 +79,37 @@ def test_unknown_metric_yields_no_data(rrh_profile):
     assert by_id["RRH-1"].met is None
 
 
+def test_program_scoped_measure(rrh_profile):
+    rows = [
+        # RRH: 1 of 2 exits permanent (50%) -> below the 65% program target
+        make_row(VALID_EXITED, client_id="C-1", household_id="H-1", **FOLLOWUPS_DONE),
+        make_row(
+            VALID_EXITED,
+            client_id="C-2",
+            household_id="H-2",
+            exit_destination="Emergency shelter",
+            **FOLLOWUPS_DONE,
+        ),
+        # A permanent-housing exit in another program must not count toward RRH-6
+        make_row(
+            VALID_EXITED,
+            client_id="C-3",
+            household_id="H-3",
+            program="Permanent Supportive Housing",
+            exit_destination="Homeownership",
+            **FOLLOWUPS_DONE,
+        ),
+    ]
+    prepared = prepare_dataset(make_source_df(rows), rrh_profile)
+    analytics = compute_analytics(prepared, rrh_profile, as_of=TODAY)
+    by_id = {m.id: m for m in analytics.measures}
+    rrh6 = by_id["RRH-6"]
+    assert rrh6.program == "Rapid Re-Housing"
+    assert rrh6.actual == 50.0  # PSH exit excluded from the scoped rate
+    assert rrh6.met is False
+    assert rrh6.small_sample is True
+
+
 def test_currency_measure_direction(rrh_profile):
     rows = [
         make_row(

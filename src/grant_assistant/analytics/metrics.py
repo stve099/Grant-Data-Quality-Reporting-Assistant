@@ -73,6 +73,7 @@ class MeasureResult(BaseModel):
     denominator: int
     met: bool | None
     small_sample: bool
+    program: str | None = None
     description: str = ""
 
 
@@ -452,9 +453,31 @@ def _evaluate_measures(result: AnalyticsResult, profile: GrantProfile) -> list[M
     for fu in result.followups:
         lookup[f"followup_{fu.key}_completion_rate"] = (fu.completion_rate, fu.due)
 
+    programs_by_name = {p.program: p for p in result.programs}
+
+    def program_lookup(program: str, metric: str) -> tuple[float | int | None, int]:
+        pm_metrics = programs_by_name.get(program)
+        if pm_metrics is None:
+            return None, 0
+        scoped: dict[str, tuple[float | int | None, int]] = {
+            "total_enrollments": (pm_metrics.enrollments, pm_metrics.enrollments),
+            "enrollments": (pm_metrics.enrollments, pm_metrics.enrollments),
+            "total_exits": (pm_metrics.exits, pm_metrics.exits),
+            "exits": (pm_metrics.exits, pm_metrics.exits),
+            "exit_rate": (pm_metrics.exit_rate, pm_metrics.enrollments),
+            "successful_exit_rate": (pm_metrics.successful_exit_rate, pm_metrics.exits),
+            "permanent_housing_rate": (pm_metrics.permanent_housing_rate, pm_metrics.exits),
+            "avg_income_change": (pm_metrics.avg_income_change, pm_metrics.n_income_pairs),
+            "median_income_change": (pm_metrics.median_income_change, pm_metrics.n_income_pairs),
+        }
+        return scoped.get(metric, (None, 0))
+
     measures: list[MeasureResult] = []
     for pm in profile.performance_measures:
-        actual, denominator = lookup.get(pm.metric, (None, 0))
+        if pm.program is not None:
+            actual, denominator = program_lookup(pm.program, pm.metric)
+        else:
+            actual, denominator = lookup.get(pm.metric, (None, 0))
         met: bool | None = None
         if actual is not None:
             met = actual >= pm.target if pm.direction == "at_least" else actual <= pm.target
@@ -470,6 +493,7 @@ def _evaluate_measures(result: AnalyticsResult, profile: GrantProfile) -> list[M
                 denominator=int(denominator),
                 met=met,
                 small_sample=0 < denominator < SMALL_SAMPLE_N,
+                program=pm.program,
                 description=pm.description,
             )
         )
