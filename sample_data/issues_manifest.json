@@ -1,0 +1,267 @@
+[
+  {
+    "description": "Client ID blanked (required field missing)",
+    "expected_rules": [
+      "DQ-001"
+    ],
+    "rows": [
+      32,
+      116,
+      200,
+      235
+    ]
+  },
+  {
+    "description": "Exit date moved before enrollment date",
+    "expected_rules": [
+      "DQ-030"
+    ],
+    "rows": [
+      20,
+      62,
+      127
+    ]
+  },
+  {
+    "description": "Invalid date text in date fields",
+    "expected_rules": [
+      "DQ-020"
+    ],
+    "rows": [
+      172,
+      207
+    ]
+  },
+  {
+    "description": "Program recorded under alias/legacy labels",
+    "expected_rules": [
+      "DQ-027"
+    ],
+    "rows": [
+      7,
+      25,
+      258
+    ]
+  },
+  {
+    "description": "Program label not defined in the grant profile",
+    "expected_rules": [
+      "DQ-026"
+    ],
+    "rows": [
+      140,
+      254
+    ]
+  },
+  {
+    "description": "Negative entry income",
+    "expected_rules": [
+      "DQ-024"
+    ],
+    "rows": [
+      157,
+      217,
+      221
+    ]
+  },
+  {
+    "description": "Entry income far above plausibility cap",
+    "expected_rules": [
+      "DQ-025"
+    ],
+    "rows": [
+      131,
+      228
+    ]
+  },
+  {
+    "description": "Entry income statistical outlier (below cap)",
+    "expected_rules": [
+      "DQ-060"
+    ],
+    "rows": [
+      257
+    ]
+  },
+  {
+    "description": "Exit destination blanked for exited clients",
+    "expected_rules": [
+      "DQ-004"
+    ],
+    "rows": [
+      43,
+      203,
+      224
+    ]
+  },
+  {
+    "description": "Exit income blanked for exited clients",
+    "expected_rules": [
+      "DQ-003"
+    ],
+    "rows": [
+      9,
+      173,
+      194,
+      231
+    ]
+  },
+  {
+    "description": "Household size of 0 or 25",
+    "expected_rules": [
+      "DQ-023",
+      "DQ-032"
+    ],
+    "rows": [
+      129,
+      130,
+      251
+    ]
+  },
+  {
+    "description": "Adults+children inconsistent with household size",
+    "expected_rules": [
+      "DQ-032"
+    ],
+    "rows": [
+      29,
+      89,
+      149
+    ]
+  },
+  {
+    "description": "Age outside plausible range",
+    "expected_rules": [
+      "DQ-022"
+    ],
+    "rows": [
+      57,
+      68
+    ]
+  },
+  {
+    "description": "Values outside controlled vocabularies",
+    "expected_rules": [
+      "DQ-028"
+    ],
+    "rows": [
+      34,
+      115,
+      196
+    ]
+  },
+  {
+    "description": "Follow-up completion dates removed (all milestones overdue)",
+    "expected_rules": [
+      "DQ-050",
+      "DQ-051",
+      "DQ-052"
+    ],
+    "rows": [
+      28,
+      76,
+      178,
+      195
+    ]
+  },
+  {
+    "description": "3-month follow-up dated before the exit date",
+    "expected_rules": [
+      "DQ-031"
+    ],
+    "rows": [
+      46,
+      52
+    ]
+  },
+  {
+    "description": "Status 'Active' despite a recorded exit date",
+    "expected_rules": [
+      "DQ-033"
+    ],
+    "rows": [
+      35,
+      174
+    ]
+  },
+  {
+    "description": "Required assessment not completed",
+    "expected_rules": [
+      "DQ-040"
+    ],
+    "rows": [
+      40,
+      64,
+      101
+    ]
+  },
+  {
+    "description": "Exit plan not completed for exited clients",
+    "expected_rules": [
+      "DQ-041"
+    ],
+    "rows": [
+      37,
+      111,
+      187
+    ]
+  },
+  {
+    "description": "Race and ethnicity blanked",
+    "expected_rules": [
+      "DQ-005"
+    ],
+    "rows": [
+      2,
+      145,
+      180,
+      238,
+      256
+    ]
+  },
+  {
+    "description": "Prompt-injection text placed in an exit destination cell",
+    "expected_rules": [
+      "DQ-028"
+    ],
+    "rows": [
+      109
+    ]
+  },
+  {
+    "description": "Enrollment dates concentrated into 2025-03 (volume spike)",
+    "expected_rules": [
+      "DQ-061"
+    ],
+    "rows": [
+      4,
+      30,
+      48,
+      67,
+      81,
+      85,
+      97,
+      107,
+      138,
+      139,
+      148,
+      160,
+      222,
+      230
+    ]
+  },
+  {
+    "description": "Exact duplicate enrollment rows appended",
+    "expected_rules": [
+      "DQ-010"
+    ],
+    "rows": [
+      39,
+      63,
+      223,
+      261,
+      262,
+      263
+    ]
+  }
+]

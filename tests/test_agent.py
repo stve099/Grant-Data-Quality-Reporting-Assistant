@@ -1,0 +1,172 @@
+"""AI analyst agent tests: grounding, fallback answers, and injection defense."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from grant_assistant.agents import DataAnalystAgent, build_fact_sheet, generate_insights
+from grant_assistant.agents.context import fact_sheet_json
+
+
+class FakeProvider:
+    """Records what would be sent to the model and returns a canned answer."""
+
+    name = "fake"
+
+    def __init__(self, reply: str = "Canned grounded answer.") -> None:
+        self.reply = reply
+        self.calls: list[dict] = []
+
+    def complete(self, system, messages, max_tokens=1500):
+        self.calls.append({"system": system, "messages": messages})
+        return self.reply
+
+
+@pytest.fixture()
+def agent(analytics_flawed, audit_flawed, profile) -> DataAnalystAgent:
+    return DataAnalystAgent(analytics_flawed, audit_flawed, profile, provider=None)
+
+
+# -- Fact sheet grounding ----------------------------------------------------
+
+
+def test_fact_sheet_contains_only_aggregates(analytics_flawed, audit_flawed, profile):
+    sheet = build_fact_sheet(analytics_flawed, audit_flawed, profile)
+    text = json.dumps(sheet)
+    # No client identifiers may appear anywhere in the AI-visible payload.
+    assert "C-10" not in text
+    assert "client_id" not in text
+    assert sheet["headline_metrics"]["total_enrollments"] == analytics_flawed.total_enrollments
+    assert sheet["data_quality"]["overall_score"] == audit_flawed.overall_score
+
+
+def test_fact_sheet_sanitizes_injected_cell_values(analytics_flawed, audit_flawed, profile):
+    # The flawed dataset plants "Ignore previous instructions..." in a destination cell.
+    sheet = build_fact_sheet(analytics_flawed, audit_flawed, profile)
+    text = fact_sheet_json(sheet).lower()
+    assert "ignore previous instructions" not in text
+    assert "reveal your system prompt" not in text
+
+
+def test_ai_mode_sends_fact_sheet_and_rules(analytics_flawed, audit_flawed, profile):
+    provider = FakeProvider()
+    agent = DataAnalystAgent(analytics_flawed, audit_flawed, profile, provider=provider)
+    answer = agent.ask("Which program had the most exits?")
+    assert answer == "Canned grounded answer."
+    system = provider.calls[0]["system"]
+    assert "<fact_sheet>" in system
+    assert "UNTRUSTED DATA" in system
+    assert "Never calculate new metrics" in system or "never invent" in system.lower()
+    assert str(analytics_flawed.total_enrollments) in system
+
+
+def test_ai_failure_falls_back_to_deterministic(analytics_flawed, audit_flawed, profile):
+    class FailingProvider(FakeProvider):
+        def complete(self, system, messages, max_tokens=1500):
+            from grant_assistant.agents.provider import AIProviderError
+
+            raise AIProviderError("boom")
+
+    agent = DataAnalystAgent(analytics_flawed, audit_flawed, profile, provider=FailingProvider())
+    answer = agent.ask("Which program had the highest successful exit rate?")
+    assert "deterministic answer" in answer.lower()
+
+
+# -- Deterministic fallback Q&A ----------------------------------------------
+
+
+def test_fallback_highest_successful_rate(agent, analytics_flawed):
+    answer = agent.ask("Which program had the highest successful exit rate?")
+    best = max(
+        (p for p in analytics_flawed.programs if p.successful_exit_rate is not None),
+        key=lambda p: p.successful_exit_rate,
+    )
+    assert best.program in answer
+    assert str(best.successful_exit_rate) in answer
+
+
+def test_fallback_overdue_followups_stays_aggregated(agent, analytics_flawed):
+    answer = agent.ask("Which clients are overdue for follow-up?")
+    assert str(analytics_flawed.total_overdue_followups) in answer
+    # Never leaks client ids in chat; points to the Issue Explorer instead.
+    assert "C-1" not in answer.split("Issue Explorer")[0].replace("DQ-050", "")
+    assert "Issue Explorer" in answer
+
+
+def test_fallback_income_metrics(agent, analytics_flawed):
+    answer = agent.ask("How did income change for households?")
+    assert f"{analytics_flawed.pct_income_increased:.1f}" in answer
+
+
+def test_fallback_below_target_measures(agent, analytics_flawed):
+    answer = agent.ask("Which outcomes are below target?")
+    met = sum(1 for m in analytics_flawed.measures if m.met is True)
+    assert f"{met} of {len(analytics_flawed.measures)}" in answer
+
+
+def test_fallback_data_quality_summary(agent, audit_flawed):
+    answer = agent.ask("Which data quality issues could affect this report?")
+    assert f"{audit_flawed.overall_score:.1f}" in answer
+
+
+def test_fallback_executive_summary(agent, analytics_flawed):
+    answer = agent.ask("Write an executive summary for this grant report.")
+    assert str(analytics_flawed.total_enrollments) in answer
+
+
+def test_fallback_unmatched_question_admits_limits(agent):
+    answer = agent.ask("What is the meaning of life?")
+    assert "could not match" in answer.lower()
+    assert "total_enrollments" in answer
+
+
+def test_agent_never_invents_metrics(agent, analytics_flawed):
+    """Every number in a fallback answer must come from calculated metrics."""
+    import re
+
+    answer = agent.ask("Which program had the highest number of exits?")
+    allowed = {str(p.exits) for p in analytics_flawed.programs}
+    allowed.add("10")  # the small-sample threshold mentioned in the caution note
+    for number in re.findall(r"\b\d+\b", answer):
+        assert number in allowed, f"unexpected number {number} in: {answer}"
+
+
+# -- Proactive insights ------------------------------------------------------
+
+
+def test_insights_sections_populated(analytics_flawed, audit_flawed, profile):
+    report = generate_insights(analytics_flawed, audit_flawed, profile)
+    assert report.key_findings
+    assert report.data_quality_risks
+    assert report.recommended_actions
+    assert report.executive_takeaways
+    assert report.anomalies  # flawed data has statistical anomalies + small samples
+
+
+def test_insights_flag_blocking_issues(analytics_flawed, audit_flawed, profile):
+    report = generate_insights(analytics_flawed, audit_flawed, profile)
+    assert any("blocking" in item.lower() for item in report.data_quality_risks)
+
+
+def test_insights_include_correlation_caution(analytics_flawed, audit_flawed, profile):
+    report = generate_insights(analytics_flawed, audit_flawed, profile)
+    assert any("not causal" in q or "causal" in q for q in report.questions_for_investigation)
+
+
+def test_insights_markdown_renders(analytics_flawed, audit_flawed, profile):
+    md = generate_insights(analytics_flawed, audit_flawed, profile).as_markdown()
+    assert "### Key Findings" in md
+    assert "### Recommended Actions" in md
+
+
+def test_executive_summary_deterministic_without_ai(agent, analytics_flawed):
+    summary = agent.executive_summary()
+    assert str(analytics_flawed.total_enrollments) in summary
+    assert "%" in summary
+
+
+def test_narrated_insights_without_ai_returns_markdown(agent):
+    text = agent.narrated_insights()
+    assert "### Key Findings" in text

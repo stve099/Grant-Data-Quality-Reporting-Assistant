@@ -1,0 +1,181 @@
+# Housing Stability Grant — example reporting profile (synthetic).
+# See docs/creating_profiles.md for a field-by-field guide.
+
+profile_id: housing_stability
+grant_name: Housing Stability Grant
+grantor: Example State Housing Trust Fund
+description: >
+  Annual outcomes grant funding emergency shelter, rapid re-housing, and
+  permanent supportive housing services. Measures focus on permanent housing
+  placement, income growth, and post-exit stability.
+
+reporting_period:
+  start: 2024-07-01
+  end: 2025-06-30
+
+programs:
+  - name: Rapid Re-Housing
+    aliases: ["RRH", "Rapid Rehousing", "Rapid Re-housing Program"]
+    description: Short-term rental assistance and housing-focused case management.
+  - name: Emergency Shelter
+    aliases: ["ES", "Emergency Shelter Program", "Shelter"]
+    description: Immediate low-barrier shelter with diversion and housing navigation.
+  - name: Permanent Supportive Housing
+    aliases: ["PSH", "Perm Supportive Housing"]
+    description: Long-term subsidized housing with intensive supportive services.
+
+field_mappings:
+  "Client ID": client_id
+  "Household ID": household_id
+  "Program Name": program
+  "Entry Date": enrollment_date
+  "Enrollment Status": enrollment_status
+  "Exit Date": exit_date
+  "Exit Destination": exit_destination
+  "Household Size": household_size
+  "Adults in Household": adults
+  "Children in Household": children
+  "Age at Entry": age
+  "Gender": gender
+  "Race": race
+  "Ethnicity": ethnicity
+  "Veteran Status": veteran_status
+  "Disability Status": disability_status
+  "Monthly Income at Entry": entry_income
+  "Monthly Income at Exit": exit_income
+  "Assessment Status": assessment_status
+  "Exit Plan Status": exit_plan_status
+  "3-Month Follow-Up Date": followup_3m_date
+  "6-Month Follow-Up Date": followup_6m_date
+  "12-Month Follow-Up Date": followup_12m_date
+
+required_fields:
+  - client_id
+  - household_id
+  - program
+  - enrollment_date
+  - enrollment_status
+  - household_size
+  - age
+
+controlled_values:
+  enrollment_status: [Active, Exited]
+  gender: [Female, Male, Non-Binary, Transgender, Questioning, Declined]
+  race:
+    - White
+    - Black or African American
+    - Asian
+    - American Indian or Alaska Native
+    - Native Hawaiian or Pacific Islander
+    - Multiple Races
+    - Declined
+  ethnicity: [Hispanic/Latino, Non-Hispanic/Non-Latino, Declined]
+  veteran_status: ["Yes", "No", "Unknown"]
+  disability_status: ["Yes", "No", "Unknown"]
+  assessment_status: [Completed, In Progress, Not Started]
+  exit_plan_status: [Completed, In Progress, Not Started]
+  exit_destination:
+    - Rental by client, no subsidy
+    - Rental by client, with subsidy
+    - Permanent supportive housing
+    - Staying with family, permanent
+    - Homeownership
+    - Staying with family, temporary
+    - Staying with friends, temporary
+    - Transitional housing
+    - Hotel or motel
+    - Hospital
+    - Substance abuse facility
+    - Jail or prison
+    - Emergency shelter
+    - Place not meant for habitation
+    - Other
+    - Deceased
+
+followup_schedule:
+  - key: 3_month
+    label: 3-Month Follow-Up
+    months_after_exit: 3
+    completion_field: followup_3m_date
+    grace_days: 14
+  - key: 6_month
+    label: 6-Month Follow-Up
+    months_after_exit: 6
+    completion_field: followup_6m_date
+    grace_days: 14
+  - key: 12_month
+    label: Annual Follow-Up
+    months_after_exit: 12
+    completion_field: followup_12m_date
+    grace_days: 30
+
+exit_destination_categories:
+  permanent_housing:
+    - Rental by client, no subsidy
+    - Rental by client, with subsidy
+    - Permanent supportive housing
+    - Staying with family, permanent
+    - Homeownership
+  temporary_housing:
+    - Staying with family, temporary
+    - Staying with friends, temporary
+    - Transitional housing
+    - Hotel or motel
+  institutional:
+    - Hospital
+    - Substance abuse facility
+    - Jail or prison
+  homeless:
+    - Emergency shelter
+    - Place not meant for habitation
+  other:
+    - Other
+    - Deceased
+
+successful_exit_categories: [permanent_housing]
+
+performance_measures:
+  - id: HS-1
+    name: Permanent housing exit rate
+    metric: permanent_housing_rate
+    target: 60
+    unit: percent
+    direction: at_least
+    description: Share of all exits that end in a permanent housing destination.
+  - id: HS-2
+    name: Households increasing income at exit
+    metric: pct_income_increased
+    target: 40
+    unit: percent
+    direction: at_least
+  - id: HS-3
+    name: 6-month follow-up completion rate
+    metric: followup_6_month_completion_rate
+    target: 70
+    unit: percent
+    direction: at_least
+  - id: HS-4
+    name: Assessment completion rate
+    metric: assessment_completion_rate
+    target: 90
+    unit: percent
+    direction: at_least
+  - id: HS-5
+    name: Exit plan completion rate
+    metric: exit_plan_completion_rate
+    target: 85
+    unit: percent
+    direction: at_least
+
+demographic_fields: [gender, race, ethnicity, veteran_status, disability_status]
+age_group_bounds: [18, 25, 35, 45, 55, 62]
+income_cap: 300000
+max_household_size: 12
+max_age: 110
+
+severity_overrides: {}
+blocking_rules: []
+
+report:
+  title: Housing Stability Grant — Annual Outcome Report
+  prepared_by: Program Data & Evaluation Team

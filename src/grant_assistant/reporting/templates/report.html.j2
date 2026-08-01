@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ r.title }} — {{ r.profile.grant_name }}</title>
+{% if charts %}<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>{% endif %}
+<style>
+  :root {
+    --ink: #1e293b; --muted: #64748b; --line: #e2e8f0;
+    --brand: #1d4ed8; --brand-dark: #1e3a8a; --good: #16a34a; --bad: #dc2626;
+    --bg-soft: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: var(--ink); margin: 0; background: #fff; line-height: 1.55; }
+  .page { max-width: 960px; margin: 0 auto; padding: 0 32px 64px; }
+  .cover { background: linear-gradient(135deg, var(--brand-dark), var(--brand)); color: #fff; padding: 72px 32px 56px; margin-bottom: 40px; }
+  .cover-inner { max-width: 960px; margin: 0 auto; }
+  .cover h1 { font-size: 2.2rem; margin: 0 0 8px; }
+  .cover .grant { font-size: 1.25rem; opacity: .95; margin-bottom: 24px; }
+  .cover .meta { font-size: .95rem; opacity: .85; }
+  .cover .meta div { margin-top: 4px; }
+  h2 { color: var(--brand-dark); border-bottom: 2px solid var(--line); padding-bottom: 6px; margin-top: 48px; }
+  h3 { color: var(--ink); margin-top: 28px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: .92rem; }
+  th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; }
+  th { background: var(--bg-soft); }
+  td.num, th.num { text-align: right; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 20px 0; }
+  .kpi { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .kpi .v { font-size: 1.5rem; font-weight: 700; color: var(--brand-dark); }
+  .kpi .l { font-size: .82rem; color: var(--muted); margin-top: 2px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+  .badge.met { background: #dcfce7; color: var(--good); }
+  .badge.missed { background: #fee2e2; color: var(--bad); }
+  .badge.na { background: var(--line); color: var(--muted); }
+  .note { background: #fffbeb; border-left: 4px solid #d97706; padding: 10px 14px; margin: 14px 0; font-size: .92rem; }
+  .chart { margin: 24px 0; }
+  ul { padding-left: 22px; }
+  li { margin: 5px 0; }
+  .footer { margin-top: 56px; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 12px; }
+  @media print { .cover { padding: 48px 32px; } }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-inner">
+    <h1>{{ r.title }}</h1>
+    <div class="grant">{{ r.profile.grant_name }}{% if r.profile.grantor %} · {{ r.profile.grantor }}{% endif %}</div>
+    <div class="meta">
+      <div><strong>Reporting period:</strong> {{ r.period_label }}</div>
+      <div><strong>Prepared by:</strong> {{ r.profile.report.prepared_by }}</div>
+      <div><strong>Generated:</strong> {{ r.generated_at.strftime("%B %d, %Y %H:%M") }}</div>
+      <div><strong>Narrative mode:</strong> {{ "AI-assisted (grounded in calculated metrics)" if r.ai_generated_narrative else "Deterministic (non-AI mode)" }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+<h2>Program Overview</h2>
+<p>{{ r.profile.description or "This report summarizes enrollment, outcomes, income, follow-up, and data quality results for the funded programs during the reporting period." }}</p>
+<table>
+  <tr><th>Program</th><th>Description</th></tr>
+  {% for p in r.profile.programs %}
+  <tr><td>{{ p.name }}</td><td>{{ p.description or "—" }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Executive Summary</h2>
+<p>{{ r.executive_summary }}</p>
+
+{% if r.audit %}
+<h2>Data Quality Statement</h2>
+<p>{{ r.audit.executive_summary() }}</p>
+<div class="kpis">
+  <div class="kpi"><div class="v">{{ "%.1f"|format(r.audit.overall_score) }}</div><div class="l">Data quality score (of 100)</div></div>
+  <div class="kpi"><div class="v">{{ r.audit.grade }}</div><div class="l">Grade</div></div>
+  <div class="kpi"><div class="v">{{ r.audit.total_findings }}</div><div class="l">Total findings</div></div>
+  <div class="kpi"><div class="v">{{ r.audit.blocking_issues|length }}</div><div class="l">Blocking issue types</div></div>
+</div>
+{% if r.audit.blocking_issues %}
+<div class="note"><strong>Blocking issues present.</strong> Resolve these before submitting to the funder:
+  <ul>{% for i in r.audit.blocking_issues %}<li>{{ i.rule_name }} — {{ i.record_count }} record(s)</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if charts.dq_severity %}<div class="chart">{{ charts.dq_severity }}</div>{% endif %}
+{% endif %}
+
+<h2>Population Served</h2>
+<div class="kpis">
+  <div class="kpi"><div class="v">{{ a.total_enrollments }}</div><div class="l">Enrollments</div></div>
+  <div class="kpi"><div class="v">{{ a.households_served }}</div><div class="l">Households served</div></div>
+  <div class="kpi"><div class="v">{{ a.total_individuals }}</div><div class="l">Individuals</div></div>
+  <div class="kpi"><div class="v">{{ a.total_adults }}</div><div class="l">Adults</div></div>
+  <div class="kpi"><div class="v">{{ a.total_children }}</div><div class="l">Children</div></div>
+  <div class="kpi"><div class="v">{{ a.active_enrollments }}</div><div class="l">Active enrollments</div></div>
+</div>
+
+<h2>Demographic Summary</h2>
+{% for label, rows in r.demographic_tables() %}
+<h3>{{ label }}</h3>
+<table>
+  <tr><th>{{ label }}</th><th class="num">Clients</th></tr>
+  {% for value, count in rows %}<tr><td>{{ value }}</td><td class="num">{{ count }}</td></tr>{% endfor %}
+</table>
+{% endfor %}
+{% if charts.age_groups %}<div class="chart">{{ charts.age_groups }}</div>{% endif %}
+
+<h2>Enrollment &amp; Exit Metrics</h2>
+<div class="kpis">
+  <div class="kpi"><div class="v">{{ a.total_exits }}</div><div class="l">Total exits</div></div>
+  <div class="kpi"><div class="v">{{ a.exit_rate if a.exit_rate is not none else "n/a" }}{% if a.exit_rate is not none %}%{% endif %}</div><div class="l">Exit rate</div></div>
+  <div class="kpi"><div class="v">{{ a.successful_exits }}</div><div class="l">Successful exits</div></div>
+  <div class="kpi"><div class="v">{{ a.successful_exit_rate if a.successful_exit_rate is not none else "n/a" }}{% if a.successful_exit_rate is not none %}%{% endif %}</div><div class="l">Successful exit rate</div></div>
+  <div class="kpi"><div class="v">{{ a.permanent_housing_exits }}</div><div class="l">Permanent housing exits</div></div>
+  <div class="kpi"><div class="v">{{ a.permanent_housing_rate if a.permanent_housing_rate is not none else "n/a" }}{% if a.permanent_housing_rate is not none %}%{% endif %}</div><div class="l">Permanent housing rate</div></div>
+</div>
+{% if charts.enrollment_trends %}<div class="chart">{{ charts.enrollment_trends }}</div>{% endif %}
+
+<h2>Housing Outcomes</h2>
+<table>
+  <tr><th>Exit destination</th><th class="num">Exits</th></tr>
+  {% for dest, count in a.exit_destination_breakdown.items() %}
+  <tr><td>{{ dest }}</td><td class="num">{{ count }}</td></tr>
+  {% endfor %}
+</table>
+{% if charts.exit_destinations %}<div class="chart">{{ charts.exit_destinations }}</div>{% endif %}
+
+<h2>Income Outcomes</h2>
+<div class="kpis">
+  <div class="kpi"><div class="v">{{ "$%s"|format("{:,.0f}".format(a.avg_entry_income)) if a.avg_entry_income is not none else "n/a" }}</div><div class="l">Avg entry income</div></div>
+  <div class="kpi"><div class="v">{{ "$%s"|format("{:,.0f}".format(a.avg_exit_income)) if a.avg_exit_income is not none else "n/a" }}</div><div class="l">Avg exit income</div></div>
+  <div class="kpi"><div class="v">{{ "$%s"|format("{:,.0f}".format(a.median_income_change)) if a.median_income_change is not none else "n/a" }}</div><div class="l">Median income change</div></div>
+  <div class="kpi"><div class="v">{{ a.pct_income_increased if a.pct_income_increased is not none else "n/a" }}{% if a.pct_income_increased is not none %}%{% endif %}</div><div class="l">Households increasing income</div></div>
+</div>
+<p>Income change is measured across {{ a.n_income_pairs }} exit(s) with valid entry and exit income.</p>
+{% if charts.income_change %}<div class="chart">{{ charts.income_change }}</div>{% endif %}
+
+<h2>Follow-Up Outcomes</h2>
+<table>
+  <tr><th>Milestone</th><th class="num">Due</th><th class="num">Completed</th><th class="num">Overdue</th><th class="num">Completion rate</th></tr>
+  {% for f in a.followups %}
+  <tr><td>{{ f.label }}</td><td class="num">{{ f.due }}</td><td class="num">{{ f.completed_of_due }}</td><td class="num">{{ f.overdue }}</td><td class="num">{{ f.completion_rate if f.completion_rate is not none else "n/a" }}{% if f.completion_rate is not none %}%{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% if charts.followups %}<div class="chart">{{ charts.followups }}</div>{% endif %}
+
+<h2>Performance Measures</h2>
+<table>
+  <tr><th>Measure</th><th class="num">Target</th><th class="num">Actual</th><th>Status</th></tr>
+  {% for m in a.measures %}
+  <tr>
+    <td>{{ m.name }}{% if m.small_sample %} <span class="badge na">small sample</span>{% endif %}</td>
+    <td class="num">{{ m.target }}{% if m.unit == "percent" %}%{% endif %}</td>
+    <td class="num">{{ m.actual if m.actual is not none else "n/a" }}{% if m.unit == "percent" and m.actual is not none %}%{% endif %}</td>
+    <td>{% if m.met is true %}<span class="badge met">Met</span>{% elif m.met is false %}<span class="badge missed">Not met</span>{% else %}<span class="badge na">No data</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% if charts.goal_vs_actual %}<div class="chart">{{ charts.goal_vs_actual }}</div>{% endif %}
+
+<h2>Program Comparison</h2>
+<table>
+  <tr><th>Program</th><th class="num">Enrollments</th><th class="num">Active</th><th class="num">Exits</th><th class="num">Successful exit rate</th><th class="num">Permanent housing rate</th><th class="num">Avg income change</th></tr>
+  {% for p in a.programs %}
+  <tr>
+    <td>{{ p.program }}{% if p.small_sample %} <span class="badge na">small sample</span>{% endif %}</td>
+    <td class="num">{{ p.enrollments }}</td>
+    <td class="num">{{ p.active }}</td>
+    <td class="num">{{ p.exits }}</td>
+    <td class="num">{{ p.successful_exit_rate if p.successful_exit_rate is not none else "n/a" }}{% if p.successful_exit_rate is not none %}%{% endif %}</td>
+    <td class="num">{{ p.permanent_housing_rate if p.permanent_housing_rate is not none else "n/a" }}{% if p.permanent_housing_rate is not none %}%{% endif %}</td>
+    <td class="num">{{ "$%s"|format("{:,.0f}".format(p.avg_income_change)) if p.avg_income_change is not none else "n/a" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% if charts.program_comparison %}<div class="chart">{{ charts.program_comparison }}</div>{% endif %}
+{% if charts.outcome_rates %}<div class="chart">{{ charts.outcome_rates }}</div>{% endif %}
+
+<h2>Key Findings</h2>
+<ul>{% for item in r.insights.key_findings %}<li>{{ item }}</li>{% endfor %}
+{% for item in r.insights.notable_trends %}<li>{{ item }}</li>{% endfor %}</ul>
+
+<h2>Challenges &amp; Risks</h2>
+<ul>{% for item in r.insights.program_concerns %}<li>{{ item }}</li>{% endfor %}
+{% for item in r.insights.data_quality_risks %}<li>{{ item }}</li>{% endfor %}
+{% for item in r.insights.anomalies %}<li>{{ item }}</li>{% endfor %}</ul>
+
+<h2>Recommended Actions</h2>
+<ul>{% for item in r.insights.recommended_actions %}<li>{{ item }}</li>{% endfor %}</ul>
+
+<h2>Methodology</h2>
+<p>All metrics are calculated deterministically from the uploaded data extract using the
+"{{ r.profile.profile_id }}" grant profile: field mappings translate source columns to a
+canonical schema; program aliases are normalized; exact duplicate enrollments are removed
+before analysis; outcome categories and successful-exit definitions come from the profile's
+exit destination mappings; follow-up due dates are derived from exit dates plus the
+configured schedule. AI narrative (when enabled) is generated strictly from these
+pre-calculated metrics and never performs its own arithmetic.</p>
+
+<h2>Data Limitations</h2>
+<ul>{% for item in r.data_limitations() %}<li>{{ item }}</li>{% endfor %}</ul>
+
+<h2>Appendix: Measure Definitions</h2>
+<table>
+  <tr><th>Measure</th><th>Definition</th></tr>
+  {% for name, definition in r.measure_definitions() %}
+  <tr><td>{{ name }}</td><td>{{ definition }}</td></tr>
+  {% endfor %}
+</table>
+
+<div class="footer">
+  Generated by Grant Data Quality &amp; Reporting Assistant · {{ r.generated_at.strftime("%Y-%m-%d %H:%M") }} ·
+  Synthetic demonstration data — contains no real client information.
+</div>
+
+</div>
+</body>
+</html>

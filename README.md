@@ -1,0 +1,289 @@
+# Grant Data Quality & Reporting Assistant
+
+**Audit client-level program data, calculate grant performance measures, explore interactive
+dashboards, ask a grounded AI data analyst, and generate professional grant reports — all from
+one configurable Python application.**
+
+Built for housing programs, nonprofit grant reporting, and human-services outcome workflows.
+All included data is **synthetic** — no real client information exists anywhere in this repository.
+
+> Built a Python-based Grant Data Quality & Reporting Assistant that audits client-level
+> program data, detects inconsistencies, calculates grant performance measures, generates
+> interactive dashboards and professional reports, and uses a grounded AI Data Analyst Agent
+> to identify anomalies, explain trends, recommend actions, and produce executive insights.
+
+---
+
+## What it does
+
+| Module | Capability |
+|---|---|
+| **Data Quality Audit** | 27 configurable rules across completeness, uniqueness, validity, consistency, case management, timeliness, and statistical anomaly detection. Severity levels, blocking rules, per-category and per-program scores, row-level exports, remediation guidance. |
+| **Analytics** | Deterministic enrollment/exit/outcome/income/follow-up/demographic metrics, program comparisons, monthly trends, and goal-vs-actual performance measures — every number computed in transparent, tested pandas code. |
+| **AI Data Analyst Agent** | A Senior-Analyst-style agent that answers questions, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries — grounded exclusively in the calculated metrics. Works fully offline in non-AI mode. |
+| **Report Generator** | Polished HTML report with embedded interactive Plotly charts, Microsoft Word report, Excel audit workbook (with a correction template), and Excel analytics workbook. |
+| **Grant Profiles** | YAML configuration drives everything: field mappings, program aliases, controlled vocabularies, follow-up schedules, performance targets, destination categories, severity overrides, and blocking rules. Two example profiles included. |
+| **Interfaces** | A 10-page Streamlit web app and a full-featured Typer CLI. |
+
+### Example outputs
+
+Generated from the included flawed sample file (no API key needed) — see [`examples/`](examples/):
+
+- [`examples/grant_report.html`](examples/grant_report.html) — full grant report with interactive charts
+- [`examples/grant_report.docx`](examples/grant_report.docx) — Word version of the same report
+- [`examples/audit_workbook.xlsx`](examples/audit_workbook.xlsx) — audit findings + flagged-record correction template
+- [`examples/analytics_summary.xlsx`](examples/analytics_summary.xlsx) — analytics summary workbook
+- [`sample_data/ISSUES_MANIFEST.md`](sample_data/ISSUES_MANIFEST.md) — every intentionally injected error and the rule that catches it
+
+---
+
+## Quick start
+
+Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 automatically).
+
+```bash
+git clone <your-fork-url> grant-data-assistant
+cd grant-data-assistant
+uv sync                      # install runtime dependencies
+uv run grant-assistant --help
+```
+
+### Run the Streamlit app
+
+```bash
+uv run streamlit run src/grant_assistant/ui/app.py
+```
+
+Then upload `sample_data/housing_program_flawed.csv` (or `.xlsx`), pick the
+**housing_stability** profile, and click **Run audit + analytics**.
+
+Demo shortcut — open the app with data preloaded:
+`http://localhost:8501/?demo=housing_program_flawed.csv&profile=housing_stability`
+
+### Run the CLI
+
+```bash
+# Full pipeline: audit + analytics + insights + all reports
+uv run grant-assistant full-run sample_data/housing_program_flawed.csv --profile housing_stability
+
+# Individual steps
+uv run grant-assistant audit   sample_data/housing_program_flawed.csv --profile housing_stability
+uv run grant-assistant analyze sample_data/housing_program_flawed.csv --profile housing_stability
+uv run grant-assistant report  sample_data/housing_program_flawed.csv --profile rapid_rehousing
+uv run grant-assistant ask     sample_data/housing_program_flawed.csv "Which program had the best outcomes?"
+uv run grant-assistant insights sample_data/housing_program_flawed.csv --profile housing_stability
+
+# Utilities
+uv run grant-assistant generate-sample-data
+uv run grant-assistant validate-config
+uv run grant-assistant rules
+```
+
+`audit` exits non-zero when blocking issues are present, so it can gate a data pipeline.
+
+---
+
+## AI provider setup (optional)
+
+The application is fully functional **without any API key**: audits, analytics, dashboards,
+reports, proactive insights, and a deterministic Q&A mode all run offline.
+
+To enable conversational AI answers and AI-polished narratives:
+
+```bash
+cp .env.example .env
+# then edit .env:
+# ANTHROPIC_API_KEY=sk-ant-...
+# GRANT_ASSISTANT_MODEL=claude-sonnet-5   (optional override)
+```
+
+The provider layer is a small protocol (`grant_assistant/agents/provider.py`); adding an
+OpenAI-compatible provider means implementing one `complete()` method.
+
+### AI safety design
+
+- The model only ever receives a **sanitized fact sheet of aggregated metrics** — never raw
+  rows, client IDs, or uploaded cell values that haven't passed the injection scrubber.
+- All metrics are calculated in Python; the system prompt forbids the model from computing
+  or inventing numbers, and the non-AI fallback produces the same grounded answers.
+- Uploaded data is treated as untrusted: cells are scanned for prompt-injection phrases
+  (`security/sanitize.py`), suspicious content is neutralized and surfaced as a warning,
+  and system instructions are never mixed with data.
+- Row-level records appear only in the Issue Explorer and Excel exports, after explicit
+  user action — chat and reports speak in aggregates.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Input
+        U[CSV / Excel upload] --> I[ingestion<br/>mapping + normalization]
+        P[configs/*.yaml<br/>grant profiles] --> I
+    end
+    I --> A[audit engine<br/>27 rules + scoring]
+    I --> M[analytics<br/>deterministic metrics]
+    A --> F[fact sheet<br/>aggregated + sanitized]
+    M --> F
+    F --> G[AI analyst agent<br/>Claude or non-AI fallback]
+    M --> C[plotly charts]
+    A --> R[report builder]
+    M --> R
+    G --> R
+    C --> R
+    R --> O1[HTML report]
+    R --> O2[Word report]
+    R --> O3[Excel workbooks]
+    A --> O4[row-level issue export]
+```
+
+```text
+src/grant_assistant/
+├── schema.py          # canonical column schema shared by every module
+├── models.py          # AuditIssue / AuditResult / Severity
+├── workflow.py        # one-call pipeline used by CLI and UI
+├── followups.py       # shared follow-up due/overdue math
+├── configuration/     # pydantic profile models + YAML loader
+├── ingestion/         # safe file loading, field mapping, type normalization
+├── audit/             # rule registry, 27 rules, scoring model
+├── analytics/         # deterministic metrics + plotly chart builders
+├── agents/            # provider abstraction, fact sheet, insights, analyst
+├── security/          # prompt-injection scrubbing for untrusted data
+├── reporting/         # HTML (Jinja2), Word (python-docx), Excel exports
+├── datagen/           # synthetic clean + flawed sample data generator
+├── cli/               # Typer CLI
+└── ui/                # Streamlit application (10 pages)
+```
+
+Data flows one way: **profile + file → prepared data → audit/analytics → agent + reports**.
+The AI layer sits at the end of the pipeline and can be removed entirely without losing any
+calculation.
+
+---
+
+## Grant profiles
+
+Profiles live in [`configs/`](configs/) and drive the whole pipeline. Two synthetic examples
+are included:
+
+- **housing_stability** — annual period, permanent-housing outcome definitions, 3/6/12-month
+  follow-up schedule, five performance measures.
+- **rapid_rehousing** — semi-annual period, broader successful-exit definition (temporary
+  housing counts), stricter blocking rules, severity overrides, 3/6-month schedule.
+
+A profile defines: grant metadata, reporting period, programs + aliases, field mappings
+(source header → canonical column), required fields, controlled vocabularies, follow-up
+schedules, exit-destination categories, successful-outcome definitions, performance measures
+with targets, demographic groupings, plausibility caps, severity overrides, blocking rules,
+and report settings.
+
+See **[docs/creating_profiles.md](docs/creating_profiles.md)** for the field-by-field guide,
+and validate any profile with:
+
+```bash
+uv run grant-assistant validate-config
+```
+
+---
+
+## Sample data
+
+`sample_data/` contains reproducible synthetic datasets (regenerate with
+`grant-assistant generate-sample-data`):
+
+- `housing_program_clean.(csv|xlsx)` — 260 enrollments across three programs that audit at
+  **100/100 with zero findings**.
+- `housing_program_flawed.(csv|xlsx)` — the same data with **23 documented injected error
+  types**: duplicates, missing required fields, impossible dates, alias/unknown program
+  labels, negative and implausible incomes, missing destinations, overdue follow-ups,
+  controlled-vocabulary violations, a prompt-injection payload, a volume spike, and more.
+- `ISSUES_MANIFEST.md` / `issues_manifest.json` — every injected issue with the expected
+  rule ID and affected rows. The test suite asserts each one is detected.
+
+---
+
+## Testing & quality
+
+```bash
+uv sync --extra dev          # install dev tools
+uv run pytest                # 152 tests
+uv run pytest --cov         # with coverage
+uv run ruff check .          # lint
+uv run ruff format --check . # formatting
+uv run mypy                  # static type checking
+uv run pre-commit install    # optional: git hooks
+```
+
+The suite covers CSV/Excel ingestion, field mapping, profile validation, every audit rule,
+scoring, follow-up math, income-change calculations, program outcomes, performance measures,
+report/export generation, CLI behavior, AI grounding (with a fake provider), prompt-injection
+defenses, synthetic data generation, and an end-to-end workflow. CI
+([.github/workflows/ci.yml](.github/workflows/ci.yml)) fails on test, lint, format, or type
+errors and runs a CLI smoke pipeline on every push.
+
+---
+
+## Privacy & security
+
+- **Synthetic data only.** The generator produces no names, SSNs, birth dates, or contact
+  fields, and tests enforce that. Never upload real client data to a demo deployment.
+- API keys come from environment variables only (`.env` is git-ignored).
+- Uploaded files are size-limited, type-checked, and read with pandas only — no code
+  execution paths.
+- Prompt-injection defenses are tested (see `tests/test_sanitize.py` and
+  `tests/test_agent.py`).
+- Reports and AI outputs are aggregate-first; row-level detail requires explicit user
+  action (Issue Explorer / Excel export).
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `uv sync` hardlink warnings/failures on OneDrive/network folders | `set UV_LINK_MODE=copy` (or move the repo to a local folder) |
+| `No profile with id '...'` | Run from the repository root, or pass `--config-dir configs` |
+| "no column mapping to 'client_id'" | Your file's headers don't match the profile's `field_mappings` — update the mapping or the export |
+| AI chat says "Non-AI mode" | Set `ANTHROPIC_API_KEY` in `.env` (see `.env.example`) |
+| Streamlit port already in use | `streamlit run ... --server.port 8502` |
+| Charts blank in the HTML report offline | The HTML report loads plotly.js from a CDN; open it online or keep the Streamlit app for offline charts |
+
+---
+
+## Limitations
+
+- PDF export is not included (HTML + Word cover the reporting need; PDF generation on
+  Windows without heavyweight dependencies is unreliable). Print the HTML report to PDF
+  from a browser if needed.
+- The Word report contains tables and narrative but not chart images (charts live in the
+  HTML report and dashboards).
+- Statistical trend rules (volume anomalies) use simple z-score/IQR heuristics, not
+  forecasting models.
+- Performance measures evaluate at grant level, not per program.
+- One enrollment row per client per program-stay is assumed (HMIS-style extract);
+  multi-table exports would need flattening first.
+
+## Roadmap
+
+- Reporting-period-over-period comparisons
+- Per-program performance targets
+- MCP server exposing audit/report tools
+- PowerPoint executive summary export
+- Local LLM provider (OpenAI-compatible endpoint)
+- Docker image
+
+---
+
+## Skills demonstrated
+
+Python · pandas · data quality engineering · data analytics · Streamlit · Plotly · Pydantic ·
+Typer · AI agents · Claude API · prompt engineering · prompt-injection defense · grounded
+generation · workflow automation · grant reporting · Excel automation (xlsxwriter/openpyxl) ·
+Word automation (python-docx) · Jinja2 · pytest · mypy · Ruff · pre-commit · GitHub Actions ·
+configuration-driven application design
+
+## Contributing & license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Released under the [MIT License](LICENSE).
+Release notes in [CHANGELOG.md](CHANGELOG.md).

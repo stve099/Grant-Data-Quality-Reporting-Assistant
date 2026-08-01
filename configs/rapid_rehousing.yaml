@@ -1,0 +1,181 @@
+# Rapid Re-Housing Outcomes Grant — example reporting profile (synthetic).
+# Demonstrates a second funder view over the same data: different measures,
+# stricter blocking rules, a shorter follow-up schedule, and a mid-year period.
+
+profile_id: rapid_rehousing
+grant_name: Rapid Re-Housing Outcomes Grant
+grantor: Example Community Foundation
+description: >
+  Outcomes-based grant emphasizing rapid placement into permanent housing and
+  income stabilization. This funder audits exit documentation strictly:
+  missing exit destinations and duplicate enrollments block submission.
+
+reporting_period:
+  start: 2025-01-01
+  end: 2025-06-30
+
+programs:
+  - name: Rapid Re-Housing
+    aliases: ["RRH", "Rapid Rehousing", "Rapid Re-housing Program"]
+    description: Short-term rental assistance and housing-focused case management.
+  - name: Emergency Shelter
+    aliases: ["ES", "Emergency Shelter Program", "Shelter"]
+    description: Immediate low-barrier shelter with diversion and housing navigation.
+  - name: Permanent Supportive Housing
+    aliases: ["PSH", "Perm Supportive Housing"]
+    description: Long-term subsidized housing with intensive supportive services.
+
+field_mappings:
+  "Client ID": client_id
+  "Household ID": household_id
+  "Program Name": program
+  "Entry Date": enrollment_date
+  "Enrollment Status": enrollment_status
+  "Exit Date": exit_date
+  "Exit Destination": exit_destination
+  "Household Size": household_size
+  "Adults in Household": adults
+  "Children in Household": children
+  "Age at Entry": age
+  "Gender": gender
+  "Race": race
+  "Ethnicity": ethnicity
+  "Veteran Status": veteran_status
+  "Disability Status": disability_status
+  "Monthly Income at Entry": entry_income
+  "Monthly Income at Exit": exit_income
+  "Assessment Status": assessment_status
+  "Exit Plan Status": exit_plan_status
+  "3-Month Follow-Up Date": followup_3m_date
+  "6-Month Follow-Up Date": followup_6m_date
+  "12-Month Follow-Up Date": followup_12m_date
+
+required_fields:
+  - client_id
+  - household_id
+  - program
+  - enrollment_date
+  - enrollment_status
+  - entry_income
+
+controlled_values:
+  enrollment_status: [Active, Exited]
+  gender: [Female, Male, Non-Binary, Transgender, Questioning, Declined]
+  race:
+    - White
+    - Black or African American
+    - Asian
+    - American Indian or Alaska Native
+    - Native Hawaiian or Pacific Islander
+    - Multiple Races
+    - Declined
+  ethnicity: [Hispanic/Latino, Non-Hispanic/Non-Latino, Declined]
+  veteran_status: ["Yes", "No", "Unknown"]
+  disability_status: ["Yes", "No", "Unknown"]
+  assessment_status: [Completed, In Progress, Not Started]
+  exit_plan_status: [Completed, In Progress, Not Started]
+  exit_destination:
+    - Rental by client, no subsidy
+    - Rental by client, with subsidy
+    - Permanent supportive housing
+    - Staying with family, permanent
+    - Homeownership
+    - Staying with family, temporary
+    - Staying with friends, temporary
+    - Transitional housing
+    - Hotel or motel
+    - Hospital
+    - Substance abuse facility
+    - Jail or prison
+    - Emergency shelter
+    - Place not meant for habitation
+    - Other
+    - Deceased
+
+followup_schedule:
+  - key: 3_month
+    label: 3-Month Follow-Up
+    months_after_exit: 3
+    completion_field: followup_3m_date
+    grace_days: 7
+  - key: 6_month
+    label: 6-Month Follow-Up
+    months_after_exit: 6
+    completion_field: followup_6m_date
+    grace_days: 7
+
+exit_destination_categories:
+  permanent_housing:
+    - Rental by client, no subsidy
+    - Rental by client, with subsidy
+    - Permanent supportive housing
+    - Staying with family, permanent
+    - Homeownership
+  temporary_housing:
+    - Staying with family, temporary
+    - Staying with friends, temporary
+    - Transitional housing
+    - Hotel or motel
+  institutional:
+    - Hospital
+    - Substance abuse facility
+    - Jail or prison
+  homeless:
+    - Emergency shelter
+    - Place not meant for habitation
+  other:
+    - Other
+    - Deceased
+
+successful_exit_categories: [permanent_housing, temporary_housing]
+
+performance_measures:
+  - id: RRH-1
+    name: Successful exit rate (stable or permanent housing)
+    metric: successful_exit_rate
+    target: 75
+    unit: percent
+    direction: at_least
+  - id: RRH-2
+    name: Permanent housing exit rate
+    metric: permanent_housing_rate
+    target: 55
+    unit: percent
+    direction: at_least
+  - id: RRH-3
+    name: Households increasing income at exit
+    metric: pct_income_increased
+    target: 50
+    unit: percent
+    direction: at_least
+  - id: RRH-4
+    name: Median income change at exit ($)
+    metric: median_income_change
+    target: 150
+    unit: currency
+    direction: at_least
+  - id: RRH-5
+    name: 3-month follow-up completion rate
+    metric: followup_3_month_completion_rate
+    target: 80
+    unit: percent
+    direction: at_least
+
+demographic_fields: [gender, race, ethnicity, veteran_status, disability_status]
+age_group_bounds: [18, 25, 35, 45, 55, 62]
+income_cap: 250000
+max_household_size: 10
+max_age: 110
+
+severity_overrides:
+  DQ-003: high        # this funder treats missing exit income as high severity
+  DQ-034: low         # and flags out-of-period dates more strongly than informational
+
+blocking_rules:
+  - DQ-004            # missing exit destination blocks submission
+  - DQ-010            # duplicate enrollments block submission
+  - DQ-030            # impossible date order blocks submission
+
+report:
+  title: Rapid Re-Housing Outcomes Grant — Semi-Annual Report
+  prepared_by: Program Data & Evaluation Team
