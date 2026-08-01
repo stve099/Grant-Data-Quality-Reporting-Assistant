@@ -66,6 +66,54 @@ def test_mcp_server_tools_registered():
 
 
 @pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_mcp_resources_registered(monkeypatch):
+    import anyio
+
+    monkeypatch.chdir(REPO_ROOT)
+    from grant_assistant.mcp_server import mcp
+
+    uris = {str(r.uri) for r in anyio.run(mcp.list_resources)}
+    assert {"grant://profiles", "grant://audit-rules", "grant://measure-definitions"} <= uris
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_mcp_prompts_registered():
+    import anyio
+
+    from grant_assistant.mcp_server import mcp
+
+    names = {p.name for p in anyio.run(mcp.list_prompts)}
+    assert {"review_grant_report", "explain_data_quality_issue"} <= names
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_mcp_resource_content(monkeypatch):
+    monkeypatch.chdir(REPO_ROOT)
+    from grant_assistant import mcp_server
+
+    profiles = mcp_server.list_profiles_resource()
+    assert "housing_stability" in profiles
+    assert "rapid_rehousing" in profiles
+
+    rules = mcp_server.audit_rules_resource()
+    assert "DQ-001" in rules
+
+    yaml_source = mcp_server.profile_resource("housing_stability")
+    assert "profile_id: housing_stability" in yaml_source
+    assert "No profile" in mcp_server.profile_resource("nope")
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_mcp_prompt_templates_are_grounded():
+    from grant_assistant import mcp_server
+
+    prompt = mcp_server.review_grant_report("data.csv", "housing_stability")
+    assert "audit_dataset" in prompt
+    assert "Do not compute your own figures" in prompt
+    assert "client-level identifiers" in prompt
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
 def test_mcp_audit_tool_runs_pipeline(monkeypatch):
     monkeypatch.chdir(REPO_ROOT)  # profile lookup uses the repo's configs/
     from grant_assistant import mcp_server

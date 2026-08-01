@@ -1,0 +1,48 @@
+name: Claude Code Review
+
+# Reviews pull requests against this project's contracts (see CLAUDE.md):
+# deterministic calculation, aggregate-only AI context, and test coverage for
+# every new rule or metric.
+#
+# Requires an ANTHROPIC_API_KEY repository secret. Without it the job is
+# skipped, so forks and clones still pass CI.
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # Skip when the secret is absent (forks, clones) rather than failing.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Review with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request against the contracts in CLAUDE.md.
+
+            Priorities, in order:
+            1. Grounding — does any change let the AI layer produce a number that
+               the deterministic layer did not calculate?
+            2. Privacy — could client-level data (IDs, raw rows) reach a prompt,
+               a report narrative, or a chat answer?
+            3. Correctness — do new audit rules read `raw` vs `df` correctly, take
+               thresholds from the profile, and avoid double-reporting?
+            4. Coverage — does every new rule have a targeted test, and every new
+               metric an expected-value test?
+            5. Docs — does the README still describe only features that exist?
+
+            Comment only on real problems. For each, give the file and line, a
+            concrete failure case, and the fix. If the PR is clean, say so briefly
+            and name what you checked.

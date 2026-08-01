@@ -20,8 +20,9 @@ All included data is **synthetic** — no real client information exists anywher
 |---|---|
 | **Data Quality Audit** | 27 configurable rules across completeness, uniqueness, validity, consistency, case management, timeliness, and statistical anomaly detection. Severity levels, blocking rules, per-category and per-program scores, row-level exports, remediation guidance. |
 | **Analytics** | Deterministic enrollment/exit/outcome/income/follow-up/demographic metrics, program comparisons, monthly trends, period-over-period deltas, and goal-vs-actual performance measures (grant-wide or program-scoped) — every number computed in transparent, tested pandas code. |
-| **AI Data Analyst Agent** | A Senior-Analyst-style agent with **typed tool use**: Claude retrieves exact values through read-only tools over the calculated results, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries. Works fully offline in non-AI mode. |
-| **Report Generator** | Polished HTML report with embedded interactive Plotly charts (CDN or fully offline), **PDF export** via headless browser, Microsoft Word report, Excel audit workbook (with a correction template), and Excel analytics workbook. |
+| **AI Data Analyst Agent** | A Senior-Analyst-style agent with **typed tool use**: Claude retrieves exact values through read-only tools over the calculated results, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries. Uses prompt caching, streaming, and extended thinking. Works fully offline in non-AI mode. |
+| **Prompt Evaluation** | A graded eval harness (`grant-assistant eval`) that mechanically verifies the grounding contract: every number traced to a calculation, no client identifiers, refusal when data is unavailable, no system-prompt disclosure. Code-based graders plus an optional model-based rubric judge. |
+| **Report Generator** | Polished HTML report with embedded interactive Plotly charts (CDN or fully offline), a **concise executive brief** template, **PDF export** via headless browser, Microsoft Word report, Excel audit workbook (with a correction template), and Excel analytics workbook. |
 | **Grant Profiles** | YAML configuration drives everything: field mappings, program aliases, controlled vocabularies, follow-up schedules, performance targets, destination categories, severity overrides, and blocking rules. Two example profiles included. |
 | **Interfaces** | An 11-page Streamlit web app, a full-featured Typer CLI, an **MCP server**, and a Docker image. |
 
@@ -89,6 +90,12 @@ uv run grant-assistant ask     sample_data/housing_program_flawed.csv "Which pro
 uv run grant-assistant insights sample_data/housing_program_flawed.csv --profile housing_stability
 uv run grant-assistant compare current_period.csv prior_period.csv --profile housing_stability
 
+# Executive brief instead of the full report
+uv run grant-assistant report sample_data/housing_program_flawed.csv --template concise
+
+# Grade the analyst against the prompt-evaluation dataset
+uv run grant-assistant eval
+
 # Utilities
 uv run grant-assistant generate-sample-data
 uv run grant-assistant validate-config
@@ -116,6 +123,25 @@ cp .env.example .env
 The provider layer is a small protocol (`grant_assistant/agents/provider.py`); adding an
 OpenAI-compatible provider means implementing one `complete()` method.
 
+### Measuring answer quality
+
+Grounding is verified, not asserted. `uv run grant-assistant eval` runs a fixed question set
+through the analyst and grades every answer:
+
+| Grader | What it enforces |
+|---|---|
+| `grounded_numbers` | Every number in the answer traces to a calculated value |
+| `no_client_identifiers` | No client or household IDs appear in any answer |
+| `no_fabricated_field` | Questions about absent fields get a refusal, not a guess |
+| `no_system_prompt_leak` | Prompt-injection attempts never disclose instructions |
+| `expected_metrics` / `expected_contains` / `expected_absent` | Case-specific expectations |
+| `model_rubric` *(optional)* | A model judges the answer against a written rubric |
+
+The deterministic suite passes 12/12 with no API key. Cases cover outcomes, income,
+follow-ups, measures, data quality, trends, small-sample caveats, correlation-vs-causation,
+unavailable data, and a direct prompt-injection attempt. Reports are written to
+`output/eval_report.md`.
+
 ### AI safety design
 
 - The model only ever receives a **sanitized fact sheet of aggregated metrics** — never raw
@@ -127,6 +153,35 @@ OpenAI-compatible provider means implementing one `complete()` method.
   and system instructions are never mixed with data.
 - Row-level records appear only in the Issue Explorer and Excel exports, after explicit
   user action — chat and reports speak in aggregates.
+- **Prompt caching** marks the stable fact-sheet system prompt and the tool block with cache
+  breakpoints, so multi-turn sessions re-read them instead of re-processing them.
+- Responsible-use practices are documented against the 4D framework (Delegation,
+  Description, Discernment, Diligence) in [docs/responsible_ai.md](docs/responsible_ai.md).
+
+### Agent workflow patterns
+
+Three patterns are used where each genuinely fits
+([src/grant_assistant/agents/workflows.py](src/grant_assistant/agents/workflows.py)):
+**routing** classifies a question into an intent and dispatches it (deterministic, so it
+behaves identically with or without AI); **chaining** produces report narrative through a
+fixed sequence; **parallelization** grades evaluation cases concurrently. The tool loop is
+the one genuinely agentic path, reserved for open-ended questions where the model must
+decide what to look up.
+
+### Built with Claude Code
+
+The repository is configured for agentic development, and those files are part of the
+deliverable:
+
+- [CLAUDE.md](CLAUDE.md) — architecture, conventions, verification gates, and gotchas.
+- [.claude/skills/](.claude/skills/) — Agent Skills for the repeatable procedures:
+  `add-audit-rule`, `new-grant-profile`, `release-check`.
+- [.claude/agents/](.claude/agents/) — subagents: a `data-quality-reviewer` for rule
+  correctness and a `grounding-auditor` that checks the AI layer against its safety contract.
+- [.claude/settings.json](.claude/settings.json) — scoped permissions and a PostToolUse hook
+  that formats and lints after every edit.
+- [.github/workflows/claude-review.yml](.github/workflows/claude-review.yml) — automated PR
+  review against the project's contracts.
 
 ---
 
@@ -223,7 +278,7 @@ uv run grant-assistant validate-config
 
 ```bash
 uv sync --extra dev          # install dev tools
-uv run pytest                # 152 tests
+uv run pytest                # full test suite
 uv run pytest --cov         # with coverage
 uv run ruff check .          # lint
 uv run ruff format --check . # formatting
@@ -266,6 +321,15 @@ errors and runs a CLI smoke pipeline on every push.
 | Charts blank in the HTML report offline | The HTML report loads plotly.js from a CDN; open it online or keep the Streamlit app for offline charts |
 
 ---
+
+## MCP server
+
+`uv sync --extra mcp && uv run grant-assistant-mcp` exposes the pipeline to any MCP client:
+
+- **Tools** — `audit_dataset`, `analyze_dataset`, `generate_report`, `ask_analyst`
+- **Resources** — `grant://profiles`, `grant://profile/{id}`, `grant://audit-rules`,
+  `grant://measure-definitions`
+- **Prompts** — `review_grant_report`, `explain_data_quality_issue`
 
 ## Deployment extras
 

@@ -169,6 +169,7 @@ class AnalyticsResult(BaseModel):
             "total_overdue_followups": self.total_overdue_followups,
             "assessment_completion_rate": self.assessment_completion_rate,
             "exit_plan_completion_rate": self.exit_plan_completion_rate,
+            "month_over_month_enrollment_change": self.month_over_month_enrollment_change,
         }
         for fu in self.followups:
             out[f"followup_{fu.key}_completion_rate"] = fu.completion_rate

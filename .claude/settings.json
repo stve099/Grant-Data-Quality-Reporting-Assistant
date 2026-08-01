@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run mypy:*)",
+      "Bash(uv run grant-assistant:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "PowerShell(uv run pytest:*)",
+      "PowerShell(uv run ruff:*)",
+      "PowerShell(uv run mypy:*)",
+      "PowerShell(uv run grant-assistant:*)",
+      "Read(//**)",
+      "Glob(//**)",
+      "Grep(//**)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(git push:*)",
+      "PowerShell(git push:*)"
+    ]
+  },
+  "env": {
+    "UV_LINK_MODE": "copy"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run ruff format --quiet . && uv run ruff check --fix --quiet . || true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -126,7 +126,7 @@ def _render_with_edge(html_path: Path, pdf_path: Path) -> None:
         )
 
 
-def write_pdf_report(report: ReportData, path: str | Path) -> Path:
+def write_pdf_report(report: ReportData, path: str | Path, template: str = "full") -> Path:
     """Render the grant report to PDF; returns the output path.
 
     Raises:
@@ -141,7 +141,7 @@ def write_pdf_report(report: ReportData, path: str | Path) -> Path:
         )
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    html = render_html_report(report, offline_charts=True)
+    html = render_html_report(report, offline_charts=True, template=template)
     with tempfile.TemporaryDirectory(prefix="grant_pdf_") as tmp:
         html_path = Path(tmp) / "report.html"
         html_path.write_text(html, encoding="utf-8")

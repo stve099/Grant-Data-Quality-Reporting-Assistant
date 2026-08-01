@@ -10,11 +10,13 @@ still works offline.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 
 from grant_assistant.agents.context import build_fact_sheet, fact_sheet_json
 from grant_assistant.agents.insights import InsightReport, generate_insights
 from grant_assistant.agents.provider import AIProvider, AIProviderError
 from grant_assistant.agents.tools import AnalystTools
+from grant_assistant.agents.workflows import Intent, classify_question
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
 from grant_assistant.models import AuditResult
@@ -109,6 +111,30 @@ class DataAnalystAgent:
                 f"{self._fallback_answer(question)}"
             )
 
+    def ask_stream(
+        self, question: str, history: list[dict[str, str]] | None = None
+    ) -> Iterator[str]:
+        """Stream an answer chunk by chunk; falls back to a single chunk.
+
+        Streaming skips the tool loop, so it is used for open narrative questions
+        where the fact sheet already carries the numbers. The UI calls
+        :meth:`ask` when a question needs tool lookups.
+        """
+        question = sanitize_text(question, max_length=2000)
+        if not question:
+            yield "Please ask a question about the dataset."
+            return
+        stream_fn = getattr(self.provider, "complete_stream", None)
+        if self.provider is None or not callable(stream_fn):
+            yield self.ask(question, history=history)
+            return
+        messages = [*(history or []), {"role": "user", "content": question}]
+        try:
+            yield from stream_fn(self._system(), messages, 1200)
+        except AIProviderError as exc:
+            logger.warning("Streaming failed, using fallback: %s", exc)
+            yield self._fallback_answer(question)
+
     # -- Proactive insights ----------------------------------------------------
 
     def proactive_insights(self) -> InsightReport:
@@ -127,6 +153,11 @@ class DataAnalystAgent:
             + report.as_markdown()
         )
         try:
+            # Synthesis benefits from reasoning first, so use extended thinking
+            # when the provider supports it.
+            thinking_fn = getattr(self.provider, "complete_thinking", None)
+            if callable(thinking_fn):
+                return thinking_fn(self._system(), [{"role": "user", "content": prompt}], 3000)
             return self.provider.complete(
                 self._system(), [{"role": "user", "content": prompt}], max_tokens=2000
             )
@@ -206,7 +237,22 @@ class DataAnalystAgent:
                 )
             return f"{best[0]} leads on {label} ({best[1]}{unit}). All programs — {listing}.{note}"
 
-        if "overdue" in q and "follow" in q:
+        # Routing workflow: classify once, then dispatch to a handler.
+        intent = classify_question(q)
+
+        if intent is Intent.CAUSAL:
+            # Causal framing outranks its subject: the answer must carry the
+            # correlation caveat regardless of what is being compared.
+            return prefix + (
+                programs_by("successful_exit_rate", "successful-exit rate")
+                + "\n\nImportant: this comparison does not show causation. Programs serve "
+                "different populations with different barriers, and clients are not "
+                "randomly assigned, so the gap reflects both program effects and intake "
+                "mix. Establishing a causal effect would need a matched comparison group "
+                "or randomized design."
+            )
+
+        if intent is Intent.FOLLOWUPS:
             parts = [
                 f"{f.label}: {f.overdue} overdue of {f.due} due "
                 f"(completion {f.completion_rate if f.completion_rate is not None else 'n/a'}%)"
@@ -218,13 +264,17 @@ class DataAnalystAgent:
                 + "\n\nClient-level lists are available in the Issue Explorer and the audit "
                 "Excel export (rules DQ-050+)."
             )
-        if "successful" in q and ("rate" in q or "highest" in q or "best" in q):
-            return prefix + programs_by("successful_exit_rate", "successful-exit rate")
-        if ("permanent" in q or "housing" in q) and "rate" in q:
-            return prefix + programs_by("permanent_housing_rate", "permanent-housing rate")
-        if "exit" in q and ("most" in q or "highest" in q or "which program" in q):
-            return prefix + programs_by("exits", "number of exits", pct=False)
-        if "income" in q:
+
+        if intent is Intent.PROGRAM_OUTCOMES:
+            if "successful" in q:
+                return prefix + programs_by("successful_exit_rate", "successful-exit rate")
+            if "permanent" in q:
+                return prefix + programs_by("permanent_housing_rate", "permanent-housing rate")
+            if "exit" in q:
+                return prefix + programs_by("exits", "number of exits", pct=False)
+            return prefix + programs_by("enrollments", "enrollments", pct=False)
+
+        if intent is Intent.INCOME:
             return prefix + (
                 f"Across {a.n_income_pairs} exits with complete income data: average income "
                 f"change ${a.avg_income_change or 0:,.0f}, median ${a.median_income_change or 0:,.0f}, "
@@ -232,7 +282,8 @@ class DataAnalystAgent:
                 f"Average entry income was ${a.avg_entry_income or 0:,.0f} and average exit "
                 f"income ${a.avg_exit_income or 0:,.0f}."
             )
-        if "target" in q or "below" in q or "measure" in q:
+
+        if intent is Intent.MEASURES:
             missed = [m for m in a.measures if m.met is False]
             met = [m for m in a.measures if m.met is True]
             lines = [f"{len(met)} of {len(a.measures)} measures met their targets."]
@@ -242,21 +293,45 @@ class DataAnalystAgent:
                     + (" (small sample)" if m.small_sample else "")
                 )
             return prefix + "\n".join(lines)
-        if "data quality" in q or "issues" in q or "audit" in q:
+
+        if intent is Intent.DATA_QUALITY:
             if self.audit is None:
                 return prefix + "No audit has been run in this session yet."
             return prefix + self.audit.executive_summary()
-        if "summary" in q or "executive" in q or "leadership" in q or "outcome" in q:
-            return prefix + self._deterministic_summary(self.proactive_insights())
-        if "trend" in q or "month" in q:
+
+        if intent is Intent.CAVEATS:
+            small_programs = [p for p in a.programs if p.small_sample and p.exits]
+            small_measures = [m for m in a.measures if m.small_sample]
+            if not small_programs and not small_measures:
+                return prefix + (
+                    "No program or measure has a denominator below the small-sample "
+                    "threshold, so no rate is being distorted by sample size."
+                )
+            lines = ["These figures rest on small denominators and are unstable:"]
+            lines += [
+                f"- {p.program}: {p.exits} exits behind its outcome rates" for p in small_programs
+            ]
+            lines += [f"- {m.name}: denominator of {m.denominator}" for m in small_measures]
+            lines.append(
+                "A single client moves these rates by several points, so treat "
+                "period-over-period movement in them as noise unless it is large."
+            )
+            return prefix + "\n".join(lines)
+
+        if intent is Intent.TRENDS:
             insights = self.proactive_insights()
             return prefix + "\n".join(
                 insights.notable_trends or ["No monthly trend data available."]
             )
+
+        if intent is Intent.SUMMARY:
+            return prefix + self._deterministic_summary(self.proactive_insights())
+
         metrics = ", ".join(sorted(k for k, v in a.metric_lookup().items() if v is not None))
         return prefix + (
-            "I could not match that question to a calculated metric. In non-AI mode I can "
+            "I could not match that question to a calculated metric, which usually means "
+            "the field it asks about is not available in this dataset. In non-AI mode I can "
             "answer questions about: program exits and outcome rates, income change, overdue "
-            "follow-ups, performance measures vs targets, data quality, trends, and the "
-            f"executive summary.\n\nAvailable metrics: {metrics}."
+            "follow-ups, performance measures vs targets, data quality, small-sample "
+            f"caveats, trends, and the executive summary.\n\nAvailable metrics: {metrics}."
         )

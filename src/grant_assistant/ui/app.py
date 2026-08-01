@@ -759,15 +759,27 @@ def page_chat() -> None:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+    stream_ok = st.toggle(
+        "Stream responses",
+        value=True,
+        help="Render the answer as it is generated. Turn off to let the agent use its "
+        "lookup tools, which needs the full response before replying.",
+        disabled=not agent.ai_enabled,
+    )
+
     question: str | None = st.chat_input("Ask the senior data analyst…")
     if question:
         with st.chat_message("user"):
             st.markdown(question)
-        with st.chat_message("assistant"), st.spinner("Analyzing…"):
-            answer = agent.ask(question, history=history[-8:])
-            st.markdown(answer)
+        with st.chat_message("assistant"):
+            if stream_ok and agent.ai_enabled:
+                answer = st.write_stream(agent.ask_stream(question, history=history[-8:]))
+            else:
+                with st.spinner("Analyzing…"):
+                    answer = agent.ask(question, history=history[-8:])
+                    st.markdown(answer)
         history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": answer})
+        history.append({"role": "assistant", "content": str(answer)})
 
 
 # ---------------------------------------------------------------------------
@@ -849,10 +861,20 @@ def page_report() -> None:
         pills=[narrative_pill],
     )
 
+    template_label = st.radio(
+        "Template",
+        ["Full report", "Executive brief"],
+        horizontal=True,
+        help="The full report is the complete funder submission. The executive brief is a "
+        "2–3 page summary built from the same calculated results.",
+    )
+    template = "full" if template_label == "Full report" else "concise"
+
     if st.button("Build report", type="primary"):
         with st.spinner("Generating report…"):
             data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
-            st.session_state["report_html"] = render_html_report(data)
+            st.session_state["report_template"] = template
+            st.session_state["report_html"] = render_html_report(data, template=template)
             st.session_state["report_docx"] = write_docx_report(
                 data, _output_dir() / "grant_report.docx"
             ).read_bytes()
@@ -901,7 +923,9 @@ def page_report() -> None:
                 try:
                     data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
                     st.session_state["report_pdf"] = write_pdf_report(
-                        data, _output_dir() / "grant_report.pdf"
+                        data,
+                        _output_dir() / "grant_report.pdf",
+                        template=st.session_state.get("report_template", "full"),
                     ).read_bytes()
                     st.rerun()
                 except PdfBackendError as exc:

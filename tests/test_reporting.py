@@ -113,6 +113,32 @@ def test_analytics_workbook_sheets(analytics_flawed, tmp_path):
     assert metrics["Total enrollments"] == analytics_flawed.total_enrollments
 
 
+def test_concise_template_is_shorter_but_keeps_the_headline_numbers(report_data, analytics_flawed):
+    full = render_html_report(report_data)
+    concise = render_html_report(report_data, template="concise")
+    assert len(concise) < len(full) / 2
+    assert "Executive Brief" in concise
+    assert "Recommended Actions" in concise
+    assert "Performance Measures" in concise
+    # Same source of truth: headline figures must match the full report exactly.
+    assert str(analytics_flawed.total_enrollments) in concise
+    assert str(analytics_flawed.total_exits) in concise
+    # Detail sections belong to the full report only.
+    assert "Appendix: Measure Definitions" not in concise
+    assert "Demographic Summary" not in concise
+
+
+def test_concise_template_written_to_disk(report_data, tmp_path):
+    path = write_html_report(report_data, tmp_path / "brief.html", template="concise")
+    assert path.exists()
+    assert "Executive Brief" in path.read_text(encoding="utf-8")
+
+
+def test_unknown_template_rejected(report_data):
+    with pytest.raises(ValueError, match="Unknown report template"):
+        render_html_report(report_data, template="fancy")
+
+
 def test_clean_dataset_report_renders_without_audit_section(analytics_clean, profile):
     data = build_report_data(analytics_clean, None, profile)
     html = render_html_report(data)

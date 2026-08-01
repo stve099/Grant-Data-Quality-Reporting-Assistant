@@ -122,6 +122,106 @@ def ask_analyst(data_file: str, question: str, profile: str = "housing_stability
     return agent.ask(question)
 
 
+# ---------------------------------------------------------------------------
+# Resources — read-only context a client can attach without running a tool
+# ---------------------------------------------------------------------------
+
+
+@mcp.resource("grant://profiles")
+def list_profiles_resource() -> str:
+    """Every grant profile available on this server, with its key settings."""
+    from grant_assistant.configuration import list_profiles, load_profile_file
+
+    lines = ["# Available grant profiles", ""]
+    for profile_id, path in sorted(list_profiles().items()):
+        profile = load_profile_file(path)
+        lines += [
+            f"## {profile_id}",
+            f"- Grant: {profile.grant_name}",
+            f"- Grantor: {profile.grantor or '—'}",
+            f"- Period: {profile.reporting_period.label}",
+            f"- Programs: {', '.join(profile.program_names)}",
+            f"- Measures: {len(profile.performance_measures)}",
+            "",
+        ]
+    return "\n".join(lines)
+
+
+@mcp.resource("grant://profile/{profile_id}")
+def profile_resource(profile_id: str) -> str:
+    """The full YAML source of one grant profile."""
+    from grant_assistant.configuration import list_profiles
+
+    profiles = list_profiles()
+    path = profiles.get(profile_id)
+    if path is None:
+        return f"No profile '{profile_id}'. Available: {', '.join(sorted(profiles))}"
+    return path.read_text(encoding="utf-8")
+
+
+@mcp.resource("grant://audit-rules")
+def audit_rules_resource() -> str:
+    """The audit rule catalog: IDs, categories, default severities, descriptions."""
+    from grant_assistant.audit import list_rules
+
+    lines = [
+        "# Audit rules",
+        "",
+        "| ID | Name | Category | Severity | Blocking |",
+        "|---|---|---|---|---|",
+    ]
+    for meta in list_rules():
+        lines.append(
+            f"| {meta.rule_id} | {meta.name} | {meta.category} | "
+            f"{meta.severity.label} | {'yes' if meta.blocking else 'no'} |"
+        )
+    return "\n".join(lines)
+
+
+@mcp.resource("grant://measure-definitions")
+def measure_definitions_resource() -> str:
+    """Plain-language definitions of every calculated performance measure."""
+    from grant_assistant.reporting.context import MEASURE_DEFINITIONS
+
+    lines = ["# Measure definitions", ""]
+    lines += [f"- **{key}** — {text}" for key, text in sorted(MEASURE_DEFINITIONS.items())]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Prompts — reusable templates a client can offer its user
+# ---------------------------------------------------------------------------
+
+
+@mcp.prompt()
+def review_grant_report(data_file: str, profile: str = "housing_stability") -> str:
+    """Prompt template: review a dataset for funder-submission readiness."""
+    return (
+        f"Audit '{data_file}' with the '{profile}' profile using the audit_dataset tool, "
+        f"then analyze it with analyze_dataset.\n\n"
+        "Report back:\n"
+        "1. Whether the data is ready for funder submission, and what blocks it.\n"
+        "2. The three data quality issues with the greatest effect on reported outcomes, "
+        "and which specific metrics each one distorts.\n"
+        "3. Performance measures below target, with the actual and target values.\n"
+        "4. A prioritized remediation list for program staff.\n\n"
+        "Ground every number in the tool results. Do not compute your own figures, and do "
+        "not include client-level identifiers."
+    )
+
+
+@mcp.prompt()
+def explain_data_quality_issue(rule_id: str) -> str:
+    """Prompt template: explain one audit rule to non-technical program staff."""
+    return (
+        f"Read the grant://audit-rules resource and explain rule {rule_id} to a program "
+        "manager with no data background.\n\n"
+        "Cover: what the rule checks, why it matters for grant reporting, what typically "
+        "causes it in day-to-day data entry, and the concrete steps to fix and prevent it. "
+        "Avoid jargon."
+    )
+
+
 def main() -> None:
     """Run the MCP server over stdio."""
     mcp.run()

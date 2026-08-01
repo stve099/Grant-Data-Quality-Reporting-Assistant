@@ -188,6 +188,15 @@ def report(
     fmt: Annotated[
         str, typer.Option("--format", "-f", help="Report formats: html, docx, pdf, or all.")
     ] = "all",
+    template: Annotated[
+        str,
+        typer.Option(
+            "--template",
+            "-t",
+            help="Report template: 'full' (complete submission) or 'concise' "
+            "(2-3 page executive brief). Applies to HTML and PDF.",
+        ),
+    ] = "full",
     offline_charts: Annotated[
         bool, typer.Option(help="Embed plotly.js in the HTML report so charts work offline.")
     ] = False,
@@ -196,6 +205,15 @@ def report(
     ] = True,
 ) -> None:
     """Generate the grant outcome report (HTML/Word/PDF) plus Excel workbooks."""
+    from grant_assistant.reporting.html_report import TEMPLATES
+
+    if template not in TEMPLATES:
+        typer.secho(
+            f"--template must be one of: {', '.join(sorted(TEMPLATES))}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=2)
     if fmt not in {"html", "docx", "pdf", "all"}:
         typer.secho("--format must be html, docx, pdf, or all", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
@@ -217,16 +235,24 @@ def report(
     )
 
     data = build_report_data(result.analytics, result.audit, result.profile, agent)
+    suffix = "" if template == "full" else f"_{template}"
     written: list[Path] = []
     if fmt in {"html", "all"}:
         written.append(
-            write_html_report(data, output / "grant_report.html", offline_charts=offline_charts)
+            write_html_report(
+                data,
+                output / f"grant_report{suffix}.html",
+                offline_charts=offline_charts,
+                template=template,
+            )
         )
     if fmt in {"docx", "all"}:
         written.append(write_docx_report(data, output / "grant_report.docx"))
     if fmt == "pdf" or fmt == "all":
         try:
-            written.append(write_pdf_report(data, output / "grant_report.pdf"))
+            written.append(
+                write_pdf_report(data, output / f"grant_report{suffix}.pdf", template=template)
+            )
         except PdfBackendError as exc:
             if fmt == "pdf":
                 typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
@@ -355,6 +381,68 @@ def compare(
     _echo_header("Narrative")
     for line in comparison.narrative:
         typer.echo(f"- {line}")
+
+
+@app.command("eval")
+def run_eval(
+    data_file: Annotated[
+        Path, typer.Argument(help="Dataset the analyst is evaluated against.")
+    ] = Path("sample_data/housing_program_flawed.csv"),
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+    cases: Annotated[
+        Path | None, typer.Option("--cases", help="YAML case file (default: built-in set).")
+    ] = None,
+    output: OutputOpt = Path("output"),
+    ai: Annotated[bool, typer.Option(help="Evaluate the AI path if a key is configured.")] = True,
+    model_grader: Annotated[
+        bool, typer.Option(help="Also judge answers against their rubric with the model.")
+    ] = False,
+) -> None:
+    """Grade the AI analyst against the prompt-evaluation dataset."""
+    from grant_assistant import schema
+    from grant_assistant.evals import load_cases, run_evals
+    from grant_assistant.evals.runner import write_report
+
+    result = _run(data_file, profile, config_dir)
+    agent = result.make_agent(use_ai=ai)
+    client_ids = {str(v) for v in result.prepared.raw[schema.CLIENT_ID].dropna().unique() if str(v)}
+
+    _echo_header(
+        "Prompt Evaluation — "
+        + ("AI mode" if agent.ai_enabled else "deterministic mode (no API key)")
+    )
+    report = run_evals(
+        agent,
+        cases=load_cases(cases),
+        client_ids=client_ids,
+        use_model_grader=model_grader,
+    )
+
+    for case in report.results:
+        color = typer.colors.GREEN if case.passed else typer.colors.RED
+        typer.secho(
+            f"  {'PASS' if case.passed else 'FAIL'}  {case.case_id:<28} {case.category}",
+            fg=color,
+        )
+        for failure in case.failures:
+            typer.secho(f"        {failure.grader}: {failure.detail}", fg=typer.colors.RED)
+
+    _echo_header("Summary")
+    for name, (passed, total) in report.by_grader().items():
+        color = typer.colors.GREEN if passed == total else typer.colors.RED
+        typer.secho(f"  {name:<26} {passed}/{total}", fg=color)
+    overall = typer.colors.GREEN if report.passed == report.total else typer.colors.RED
+    typer.secho(
+        f"\n  {report.passed}/{report.total} cases passed ({report.pass_rate}%)",
+        fg=overall,
+        bold=True,
+    )
+
+    paths = write_report(report, output)
+    typer.secho(f"\nReport: {paths['markdown']}", fg=typer.colors.GREEN)
+    if report.passed != report.total:
+        raise typer.Exit(code=1)
 
 
 @app.command("generate-sample-data")

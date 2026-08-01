@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.2.0 — 2026-08-01
+
+### Added
+- **Prompt evaluation harness** (`grant-assistant eval`) — a graded dataset of 12 cases
+  with seven code-based graders that mechanically verify the grounding contract
+  (every number traced to a calculation, no client identifiers, refusal on
+  unavailable data, no system-prompt disclosure), plus an optional model-based
+  rubric judge. Cases run in parallel; reports written as markdown and JSON.
+- **Anthropic API features** — prompt caching breakpoints on the stable fact-sheet
+  system prompt and the tool block, streaming responses in the chat UI, extended
+  thinking for narrative synthesis, explicit temperature control, and cache-hit
+  token accounting.
+- **Explicit workflow patterns** (`agents/workflows.py`) — routing (question →
+  intent → handler, used by the deterministic analyst), chaining, and
+  parallelization, each applied where it genuinely fits.
+- **MCP resources and prompts** — `grant://profiles`, `grant://profile/{id}`,
+  `grant://audit-rules`, `grant://measure-definitions`, plus `review_grant_report`
+  and `explain_data_quality_issue` prompt templates.
+- **Concise report template** — a 2–3 page executive brief rendered from the same
+  `ReportData` as the full report, available in HTML and PDF via `--template concise`
+  and in the app's Report Builder.
+- **Claude Code configuration** — `CLAUDE.md`, scoped permissions with a
+  format-and-lint hook, `/verify` and `/regen-artifacts` commands, `add-audit-rule`,
+  `new-grant-profile`, and `release-check` Agent Skills, and `data-quality-reviewer`
+  and `grounding-auditor` subagents.
+- **Automated PR review** workflow using the Claude Code GitHub Action.
+- **Responsible AI documentation** mapping the project onto the 4D framework
+  (`docs/responsible_ai.md`).
+
+### Fixed
+- The deterministic analyst now answers causal questions with an explicit
+  correlation-vs-causation caveat, and small-sample questions with the specific
+  programs and measures affected — both gaps found by the new eval harness.
+- Question routing no longer matches "housing" incidentally, so questions about
+  fields the dataset lacks fall through to an honest "not available" answer instead
+  of a program comparison.
+- `month_over_month_enrollment_change` is exposed in `metric_lookup()`, so a metric
+  the narrative already cited is now retrievable by the agent and traceable by graders.
+
 ## 1.1.0 — 2026-08-01
 
 ### Added
