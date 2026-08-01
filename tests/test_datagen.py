@@ -85,6 +85,18 @@ def test_write_sample_files(tmp_path):
         assert paths[name].stat().st_size > 0
 
 
+def test_clean_data_uses_only_controlled_values(clean_df, profile):
+    """Generated clean data must never emit a value outside the profile's vocabularies."""
+    from grant_assistant.datagen.generator import H
+
+    for field, allowed in profile.controlled_values.items():
+        header = H.get(field)
+        if header is None or header not in clean_df.columns:
+            continue
+        used = {str(v).strip() for v in clean_df[header].dropna() if str(v).strip()}
+        assert used <= set(allowed), f"{field}: {sorted(used - set(allowed))} not in profile"
+
+
 def test_no_real_pii_fields(clean_df):
     # Synthetic data must not include name/SSN/DOB-style fields.
     lowered = {c.lower() for c in clean_df.columns}

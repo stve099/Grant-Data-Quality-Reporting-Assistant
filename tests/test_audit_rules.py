@@ -88,7 +88,7 @@ def test_program_alias_reported_as_info(profile):
 
 
 def test_controlled_value_violation_detected(profile):
-    rows = [make_row(gender="F"), make_row(veteran_status="Maybe", client_id="C-9")]
+    rows = [make_row(race="Caucasian"), make_row(veteran_status="Maybe", client_id="C-9")]
     fired = fired_rules(audit_source_rows(rows, profile))
     assert fired["DQ-028"] == {"C-1", "C-9"}
 

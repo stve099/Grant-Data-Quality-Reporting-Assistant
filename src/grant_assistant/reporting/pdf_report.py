@@ -58,20 +58,43 @@ def pdf_backend() -> str | None:
     return None
 
 
+#: Letter (8.5in) minus 0.5in margins = 7.5in of content = 720 CSS px at 96dpi.
+#: The page is laid out at exactly this width so Plotly's SVGs — which are
+#: sized once at load time and are not re-laid out for printing — match the
+#: paper exactly instead of overflowing off the right edge.
+PRINT_WIDTH_PX = 720
+PAGE_MARGIN = "0.5in"
+
+
 def _render_with_playwright(html_path: Path, pdf_path: Path) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
         try:
-            page = browser.new_page()
+            page = browser.new_page(viewport={"width": PRINT_WIDTH_PX, "height": 1120})
             page.goto(html_path.resolve().as_uri())
             page.wait_for_load_state("networkidle")
+            # Re-fit any chart that sized itself before layout settled.
+            page.evaluate(
+                """() => {
+                    if (!window.Plotly) return;
+                    document.querySelectorAll('.js-plotly-plot')
+                        .forEach((el) => window.Plotly.Plots.resize(el));
+                }"""
+            )
+            page.wait_for_timeout(400)
             page.pdf(
                 path=str(pdf_path),
                 format="Letter",
                 print_background=True,
-                margin={"top": "0.5in", "bottom": "0.5in", "left": "0.4in", "right": "0.4in"},
+                prefer_css_page_size=True,
+                margin={
+                    "top": PAGE_MARGIN,
+                    "bottom": PAGE_MARGIN,
+                    "left": PAGE_MARGIN,
+                    "right": PAGE_MARGIN,
+                },
             )
         finally:
             browser.close()
@@ -86,6 +109,8 @@ def _render_with_edge(html_path: Path, pdf_path: Path) -> None:
             "--headless=new",
             "--disable-gpu",
             "--no-first-run",
+            # Lay out at the printable width so charts match the paper.
+            f"--window-size={PRINT_WIDTH_PX},1120",
             f"--print-to-pdf={pdf_path.resolve()}",
             "--no-pdf-header-footer",
             html_path.resolve().as_uri(),

@@ -60,7 +60,7 @@ required_fields:
 
 controlled_values:
   enrollment_status: [Active, Exited]
-  gender: [Female, Male, Non-Binary, Transgender, Questioning, Declined]
+  gender: [Female, Male, Declined, Unknown]
   race:
     - White
     - Black or African American

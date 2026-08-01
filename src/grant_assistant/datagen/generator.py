@@ -76,8 +76,8 @@ DESTINATION_MIX = {
     "Permanent Supportive Housing": (0.82, 0.08, 0.05, 0.03, 0.02),
 }
 
-GENDERS = ["Female", "Male", "Non-Binary", "Transgender", "Declined"]
-GENDER_W = [0.46, 0.44, 0.04, 0.03, 0.03]
+GENDERS = ["Female", "Male", "Declined", "Unknown"]
+GENDER_W = [0.48, 0.45, 0.04, 0.03]
 RACES = [
     "White",
     "Black or African American",
@@ -293,7 +293,7 @@ def inject_issues(clean: pd.DataFrame, seed: int = 7) -> tuple[pd.DataFrame, lis
 
     # 14. Unexpected values in controlled fields.
     idx = take(any_pool, 3)
-    df.loc[idx[:1], H["gender"]] = "F"
+    df.loc[idx[:1], H["race"]] = "Caucasian"
     df.loc[idx[1:2], H["veteran_status"]] = "Maybe"
     df.loc[idx[2:], H["enrollment_status"]] = "Pending Review"
     log("Values outside controlled vocabularies", ["DQ-028"], idx)

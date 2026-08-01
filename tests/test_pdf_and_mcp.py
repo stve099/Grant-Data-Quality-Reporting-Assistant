@@ -26,6 +26,17 @@ def test_pdf_report_renders(analytics_flawed, audit_flawed, profile, tmp_path):
     assert len(content) > 20_000
 
 
+def test_report_includes_print_rules(analytics_flawed, audit_flawed, profile):
+    """Pagination rules must ship, or PDFs break blocks across pages."""
+    from grant_assistant.reporting import render_html_report
+
+    html = render_html_report(build_report_data(analytics_flawed, audit_flawed, profile))
+    assert "@page" in html
+    assert "@media print" in html
+    assert "break-inside: avoid" in html
+    assert "display: table-header-group" in html  # repeat table headers per page
+
+
 def test_offline_html_embeds_plotly(analytics_flawed, audit_flawed, profile):
     from grant_assistant.reporting import render_html_report
 

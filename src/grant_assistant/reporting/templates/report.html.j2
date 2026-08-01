@@ -44,7 +44,39 @@
   ul { padding-left: 22px; }
   li { margin: 5px 0; }
   .footer { margin-top: 56px; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 12px; }
-  @media print { .cover { padding: 48px 32px; } }
+
+  /* ---- Print / PDF ----
+     The PDF renderer loads this page at the printable content width so
+     Plotly's rendered SVG width matches the paper. These rules only control
+     pagination: keep blocks whole, repeat table headers, never orphan a
+     heading from its content. */
+  @page { size: Letter; margin: 0.5in; }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 0 0 8px; }
+    .cover { margin: 0 0 22px; padding: 44px 28px; break-after: page; }
+    .cover-inner { max-width: none; }
+    .cover h1 { font-size: 1.9rem; }
+
+    h2 { break-after: avoid; page-break-after: avoid; margin-top: 22px; font-size: 1.15rem; }
+    h3 { break-after: avoid; page-break-after: avoid; font-size: 1rem; }
+    h2 + *, h3 + * { break-before: avoid; page-break-before: avoid; }
+
+    table, tr, .kpi, .kpis, .note, .chart, .footer {
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    thead { display: table-header-group; }
+    table { font-size: .8rem; }
+    th, td { padding: 5px 7px; }
+
+    .chart { margin: 14px 0; }
+    .chart .js-plotly-plot, .chart .plot-container { max-width: 100% !important; }
+    .kpis { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .kpi { padding: 10px 12px; }
+    .kpi .v { font-size: 1.25rem; }
+    ul { break-inside: auto; }
+    li { break-inside: avoid; page-break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
