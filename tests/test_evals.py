@@ -300,6 +300,24 @@ def test_summarize_runs_separates_stable_from_intermittent():
     assert s.max_pass_rate == 66.7
 
 
+def test_write_stability_preserves_every_run(agent, tmp_path):
+    """A failure in run 2 must survive a green run 3."""
+    import json
+
+    from grant_assistant.evals.runner import write_stability
+
+    reports = [run_evals(agent, cases=default_cases()[:2]) for _ in range(3)]
+    path = write_stability(reports, tmp_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert len(payload["reports"]) == 3
+    # The summary is serialized, not left for a reader to recompute.
+    assert payload["summary"]["mean_pass_rate"] == 100.0
+    assert payload["summary"]["runs"] == 3
+    assert payload["summary"]["flaky"] == []
+    # Each run's answers are retained, so a non-final failure stays inspectable.
+    assert all(r["results"][0]["answer"] for r in payload["reports"])
+
+
 def test_case_execution_error_is_recorded(analytics_flawed, audit_flawed, profile):
     class ExplodingAgent(DataAnalystAgent):
         def ask(self, question, history=None):  # type: ignore[override]

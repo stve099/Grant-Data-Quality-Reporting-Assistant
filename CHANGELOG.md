@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0 — 2026-08-01
+## 1.3.0 — 2026-08-03
 
 ### Added
 - **OpenAI-compatible AI provider** — `GRANT_ASSISTANT_PROVIDER` selects the backend
@@ -13,10 +13,39 @@
   degrades to plain completion elsewhere. Tests cover request construction, the
   tool-result round-trip, streaming, provider selection, and agent integration with a
   stubbed client.
+- **Repeated evaluation runs** (`grant-assistant eval --runs N`) — a hosted model is
+  not reproducible even at temperature 0, so one run measures luck as much as quality.
+  Reports the pass rate of each run with the mean, min and max, and separates cases
+  that always pass from the intermittent ones. Every run is persisted to
+  `eval_stability.json`, so a failure in one run is not erased by a later green run.
+  The command exits non-zero if *any* run failed.
+- **Backend provenance in eval reports** — `provider` and `model` are recorded and
+  rendered, so results from different backends are no longer indistinguishable.
+- **`unreported_demographics` metric** — the per-field total of missing, unknown and
+  declined responses, exposed through `metric_lookup()` and returned by
+  `get_demographics` as `not_reported`. Reports quote this figure routinely; without a
+  calculated total the model had to add the categories itself, which the grounding
+  contract forbids.
 
 ### Changed
 - `ai_available()` and `get_provider()` now dispatch on the selected provider's
   credentials rather than only `ANTHROPIC_API_KEY`.
+- Both API clients now use an explicit timeout (120s) and retry budget (2). A hung
+  request previously blocked the Streamlit UI indefinitely with no feedback.
+- The system prompt's arithmetic ban now names the specific cases the eval caught:
+  subtracting two values to state a gap, and summing categories.
+
+### Fixed
+- Number extraction in the graders read the hyphen in measure IDs (`HS-1`), compound
+  rule citations (`DQ-050/051/052`) and hyphenated words (`mid-2024`) as a minus sign,
+  and left bare years from prose dates in place. All three produced false "ungrounded
+  number" failures against any model whose formatting differed from Claude's.
+- The `refusal-unavailable-field` eval case forbade a phrase its own rubric asked the
+  model to say, so no correct refusal could pass. It is now graded by
+  `grounded_numbers`, which catches an invented score as an untraceable number.
+- Tests no longer inherit the developer's `.env`: the CLI's `load_dotenv()` wrote it
+  into `os.environ` for the whole pytest process, so a working local configuration
+  caused failures CI never saw.
 
 ## 1.2.0 — 2026-08-01
 

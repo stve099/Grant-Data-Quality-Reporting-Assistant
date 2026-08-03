@@ -411,7 +411,7 @@ def run_eval(
     """Grade the AI analyst against the prompt-evaluation dataset."""
     from grant_assistant import schema
     from grant_assistant.evals import load_cases, run_evals
-    from grant_assistant.evals.runner import summarize_runs, write_report
+    from grant_assistant.evals.runner import summarize_runs, write_report, write_stability
 
     result = _run(data_file, profile, config_dir)
     agent = result.make_agent(use_ai=ai)
@@ -480,6 +480,10 @@ def run_eval(
     paths = write_report(report, output)
     label = " (final run)" if runs > 1 else ""
     typer.secho(f"\nReport{label}: {paths['markdown']}", fg=typer.colors.GREEN)
+    if runs > 1:
+        # Every run, not just the last: otherwise a failure in run 2 is erased by
+        # a green run 3, which is exactly the case --runs exists to surface.
+        typer.secho(f"All runs:   {write_stability(reports, output)}", fg=typer.colors.GREEN)
     if any(r.passed != r.total for r in reports):
         raise typer.Exit(code=1)
 

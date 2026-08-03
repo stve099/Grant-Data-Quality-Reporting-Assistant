@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from grant_assistant.agents import DataAnalystAgent
 from grant_assistant.evals.dataset import EvalCase, default_cases
@@ -137,30 +137,40 @@ class RunStability(BaseModel):
     pass_rates: list[float] = Field(description="Pass rate of each run, in order.")
     case_pass_counts: dict[str, int] = Field(description="case id -> runs passed.")
 
+    # Computed fields, not plain properties, so the written artifact carries the
+    # summary rather than only the raw counts a reader would have to redo.
+
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def runs(self) -> int:
         return len(self.pass_rates)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def mean_pass_rate(self) -> float:
         return round(sum(self.pass_rates) / len(self.pass_rates), 1) if self.pass_rates else 0.0
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def min_pass_rate(self) -> float:
         return min(self.pass_rates) if self.pass_rates else 0.0
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def max_pass_rate(self) -> float:
         return max(self.pass_rates) if self.pass_rates else 0.0
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def always_passed(self) -> list[str]:
         return sorted(c for c, n in self.case_pass_counts.items() if n == self.runs)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def never_passed(self) -> list[str]:
         return sorted(c for c, n in self.case_pass_counts.items() if n == 0)
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def flaky(self) -> list[str]:
         """Cases that passed some runs but not all — the interesting ones."""
@@ -259,3 +269,26 @@ def write_report(report: EvalReport, directory: str | Path) -> dict[str, Path]:
     md_path.write_text(report.as_markdown(), encoding="utf-8")
     json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     return {"markdown": md_path, "json": json_path}
+
+
+class StabilityReport(BaseModel):
+    """Every run of a repeated evaluation, plus the summary across them.
+
+    Written whenever the suite runs more than once. Without it the final run
+    overwrites ``eval_report.json`` and a failure in an earlier run leaves no
+    evidence — which would defeat the point of repeating the suite.
+    """
+
+    generated_at: datetime = Field(default_factory=datetime.now)
+    summary: RunStability
+    reports: list[EvalReport]
+
+
+def write_stability(reports: list[EvalReport], directory: str | Path) -> Path:
+    """Persist all runs of a repeated evaluation to one JSON artifact."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "eval_stability.json"
+    payload = StabilityReport(summary=summarize_runs(reports), reports=reports)
+    path.write_text(payload.model_dump_json(indent=2), encoding="utf-8")
+    return path
