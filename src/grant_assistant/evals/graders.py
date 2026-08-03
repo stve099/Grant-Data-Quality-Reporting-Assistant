@@ -28,10 +28,23 @@ if TYPE_CHECKING:
 #: the percent base, the documented small-sample threshold, and 0/1.
 _UNIVERSAL_ALLOWED = {0.0, 1.0, 10.0, 100.0}
 
-_RULE_ID = re.compile(r"\bDQ-\d+\b")
+#: Any UPPERCASE-prefixed identifier: audit rules (DQ-3) and the measure IDs
+#: each profile defines (HS-1). Must be stripped before number extraction or the
+#: hyphen reads as a minus sign.
+_IDENTIFIER = re.compile(r"\b[A-Z]{2,}-\d+\b")
 _ISO_DATE = re.compile(r"\b\d{4}-\d{2}(-\d{2})?\b")
+#: Prose dates ("Aug 3, 2026", "June 2025"). Stripped whole: removing only the
+#: year would leave a bare day number that no calculation produced.
+_PROSE_DATE = re.compile(
+    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?,?\s+"
+    r"(?:\d{1,2},?\s+)?\d{4}\b"
+)
 _LIST_MARKER = re.compile(r"^\s*\d+[.)]\s", re.MULTILINE)
-_NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+#: A leading "-" is a minus sign only when it does not follow a word character,
+#: so "mid-2024" and "HS-1" yield a positive number rather than a negative one.
+#: The hyphen itself stays out of the lookbehind: a digit *after* a hyphen is
+#: still a number (the 5 in "1-5"), it simply is not negative.
+_NUMBER = re.compile(r"(?<!\w)-?\d[\d,]*(?:\.\d+)?")
 _CLIENT_ID = re.compile(r"\b[CH]-\d{3,}\b")
 
 
@@ -154,9 +167,10 @@ def allowed_numbers(ctx: GradingContext) -> set[float]:
 
 
 def extract_numbers(text: str) -> list[float]:
-    """Numbers stated in prose, excluding rule IDs, ISO dates, and list markers."""
-    cleaned = _RULE_ID.sub(" ", text)
+    """Numbers stated in prose, excluding identifiers, dates, and list markers."""
+    cleaned = _IDENTIFIER.sub(" ", text)
     cleaned = _ISO_DATE.sub(" ", cleaned)
+    cleaned = _PROSE_DATE.sub(" ", cleaned)
     cleaned = _LIST_MARKER.sub(" ", cleaned)
     values: list[float] = []
     for match in _NUMBER.finditer(cleaned):

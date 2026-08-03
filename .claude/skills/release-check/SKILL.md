@@ -25,8 +25,9 @@ All four must pass. A failure here stops the release — diagnose, fix, re-run.
 uv run grant-assistant eval
 ```
 
-The deterministic (non-AI) suite must be 100%. With `ANTHROPIC_API_KEY` set, also run the
-AI suite and record the pass rate — a regression here means the grounding contract slipped.
+The deterministic (non-AI) suite must be 100%. With a provider configured (`ANTHROPIC_API_KEY`,
+or `GRANT_ASSISTANT_PROVIDER=openai` with `OPENAI_API_KEY`), also run the AI suite and record
+the pass rate — a regression here means the grounding contract slipped.
 
 ## 3. Regenerate artifacts
 
@@ -58,7 +59,8 @@ uv run streamlit run src/grant_assistant/ui/app.py
 
 ## 5. Safety scan
 
-- No `ANTHROPIC_API_KEY`, token, or credential anywhere outside `.env.example`.
+- No `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, token, or credential anywhere outside
+  `.env.example`.
 - `.env` is git-ignored and not staged.
 - Sample data contains no name, SSN, birth date, phone, email, or address fields
   (`tests/test_datagen.py::test_no_real_pii_fields` enforces this).

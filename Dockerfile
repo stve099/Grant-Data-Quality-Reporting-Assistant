@@ -3,8 +3,11 @@
 #   docker build -t grant-assistant .
 #   docker run -p 8501:8501 grant-assistant
 #
-# Pass an API key to enable AI features (optional):
+# Pass an API key to enable AI features (optional). Anthropic is the default
+# provider; the image also ships the OpenAI-compatible backend (OpenAI, Ollama,
+# any OpenAI-compatible endpoint), selected with GRANT_ASSISTANT_PROVIDER:
 #   docker run -p 8501:8501 -e ANTHROPIC_API_KEY=sk-ant-... grant-assistant
+#   docker run -p 8501:8501 -e GRANT_ASSISTANT_PROVIDER=openai -e OPENAI_API_KEY=sk-... grant-assistant
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
@@ -13,7 +16,7 @@ WORKDIR /app
 # Install dependencies first for layer caching.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra openai
 
 COPY configs ./configs
 COPY sample_data ./sample_data

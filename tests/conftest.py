@@ -23,6 +23,37 @@ CONFIG_DIR = REPO_ROOT / "configs"
 #: Fixed evaluation date so follow-up math never depends on the wall clock.
 TODAY = date(2026, 8, 1)
 
+
+@pytest.fixture(autouse=True)
+def _isolate_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate tests from the developer's own provider configuration.
+
+    Two leaks to close. First, provider selector vars already exported in the
+    shell. Second, and less obvious: the CLI calls ``load_dotenv()``, which
+    writes a real ``.env`` into ``os.environ`` for the whole pytest process the
+    moment the CLI is exercised — so a developer with a working ``.env`` saw
+    failures that CI never would. Neutralizing the bound name keeps an on-disk
+    ``.env`` out of the suite.
+
+    Only ``cli.main`` is patched. ``ui.app`` also calls ``load_dotenv()``, but
+    patching it by name would import Streamlit into every test — and its
+    module-level call would fire before the patch anyway. No test imports it.
+
+    ``ANTHROPIC_API_KEY`` is cleared here too; tests that want a provider set
+    their own values via ``monkeypatch.setenv``.
+    """
+    for var in (
+        "GRANT_ASSISTANT_PROVIDER",
+        "GRANT_ASSISTANT_MODEL",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    monkeypatch.setattr("grant_assistant.cli.main.load_dotenv", lambda *a, **k: False)
+
+
 # A fully valid ACTIVE enrollment in source-file format.
 VALID_ACTIVE: dict[str, Any] = {
     H["client_id"]: "C-1",

@@ -111,17 +111,37 @@ uv run grant-assistant rules
 The application is fully functional **without any API key**: audits, analytics, dashboards,
 reports, proactive insights, and a deterministic Q&A mode all run offline.
 
-To enable conversational AI answers and AI-polished narratives:
+To enable conversational AI answers and AI-polished narratives, choose a backend with the
+`GRANT_ASSISTANT_PROVIDER` environment variable (`anthropic` default, `openai`, or `ollama`):
 
 ```bash
 cp .env.example .env
 # then edit .env:
+
+# --- Anthropic (default) ---
 # ANTHROPIC_API_KEY=sk-ant-...
 # GRANT_ASSISTANT_MODEL=claude-sonnet-5   (optional override)
+
+# --- OpenAI ---
+# GRANT_ASSISTANT_PROVIDER=openai
+# OPENAI_API_KEY=sk-...
+# GRANT_ASSISTANT_MODEL=gpt-4o-mini       (optional override)
+
+# --- Ollama (local, keyless) ---
+# uv sync --extra openai                  (one-time: installs the OpenAI SDK)
+# GRANT_ASSISTANT_PROVIDER=ollama
+# OPENAI_API_KEY=ollama                   (any non-empty placeholder works)
+# OPENAI_BASE_URL=http://localhost:11434/v1   (default; override for Ollama Cloud)
+# GRANT_ASSISTANT_MODEL=llama3.1          (optional override)
 ```
 
-The provider layer is a small protocol (`grant_assistant/agents/provider.py`); adding an
-OpenAI-compatible provider means implementing one `complete()` method.
+For Ollama Cloud or any other OpenAI-compatible endpoint (LM Studio, etc.), set
+`OPENAI_BASE_URL` to the host and `OPENAI_API_KEY` to its key instead of the local defaults.
+
+The provider layer is a small protocol (`grant_assistant/agents/provider.py`); Anthropic and
+an OpenAI-compatible provider (OpenAI, Ollama, LM Studio) are both built in, selected by the
+one variable above. The OpenAI-compatible path implements `complete()`, streaming, and the
+agent tool loop; extended thinking is Anthropic-only and degrades gracefully elsewhere.
 
 ### Measuring answer quality
 
@@ -224,7 +244,7 @@ src/grant_assistant/
 ├── reporting/         # HTML (Jinja2), Word (python-docx), Excel exports
 ├── datagen/           # synthetic clean + flawed sample data generator
 ├── cli/               # Typer CLI
-└── ui/                # Streamlit application (10 pages)
+└── ui/                # Streamlit application (11 pages)
 ```
 
 Data flows one way: **profile + file → prepared data → audit/analytics → agent + reports**.
@@ -354,13 +374,13 @@ Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISH
   forecasting models.
 - One enrollment row per client per program-stay is assumed (HMIS-style extract);
   multi-table exports would need flattening first.
-- Live AI calls require an Anthropic API key; the AI path is tested against a fake
-  provider, while the deterministic non-AI mode is the fully tested default.
+- Live AI calls require a provider key (Anthropic, OpenAI, or Ollama); the AI path is
+  tested against fake providers, while the deterministic non-AI mode is the fully tested
+  default.
 
 ## Roadmap
 
 - PowerPoint executive summary export
-- Local LLM provider (OpenAI-compatible endpoint)
 - Chart images inside the Word report
 - Scheduled audits with email summaries
 

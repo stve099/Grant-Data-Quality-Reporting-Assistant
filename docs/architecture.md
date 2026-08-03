@@ -66,8 +66,10 @@ enrollments are removed before computation (and disclosed in `notes`). Denominat
 10 set `small_sample` flags that surface everywhere downstream.
 
 ### agents
-`AIProvider` is a two-member protocol (`name`, `complete`). `AnthropicProvider` implements
-it; `get_provider()` returns `None` without a key, which flips every consumer into
+`AIProvider` is a two-member protocol (`name`, `complete`). Two backends implement it:
+`AnthropicProvider` and `OpenAICompatibleProvider` (OpenAI, Ollama, any OpenAI-compatible
+endpoint), selected by the `GRANT_ASSISTANT_PROVIDER` env var. `get_provider()` returns
+`None` when the selected provider lacks its credentials, which flips every consumer into
 deterministic mode. The fact sheet is the *only* data the model sees: aggregated metrics
 with all data-derived strings passed through `security.sanitize_text`. Proactive insights
 (`generate_insights`) are computed rules over the analytics/audit results — the AI, when

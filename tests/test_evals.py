@@ -57,6 +57,32 @@ def test_extract_numbers_ignores_rule_ids_dates_and_list_markers():
     assert values == []
 
 
+def test_measure_ids_are_not_read_as_negative_numbers():
+    """HS-1 is a measure ID, not minus one — the hyphen must not become a sign."""
+    values = extract_numbers("HS-1 and HS-5 were met; see DQ-3 for the caveat.")
+    assert values == []
+
+
+def test_hyphenated_words_and_ranges_are_not_negatives():
+    values = extract_numbers("Enrollment rose from mid-2024 through the 1-5 range.")
+    assert all(v >= 0 for v in values), values
+    assert 2024.0 in values
+
+
+def test_prose_dates_contribute_no_numbers():
+    """Stripping only the year would leave a bare day number behind."""
+    assert extract_numbers("Reporting period: Jul 1, 2024 - Jun 30, 2025.") == []
+    assert extract_numbers("As of: Aug 3, 2026") == []
+    assert extract_numbers("Peaked in June 2025.") == []
+
+
+def test_genuine_negatives_still_extracted():
+    """The fix must not blind the grader to real negative values."""
+    values = extract_numbers("Income fell by -5.0 percent, a change of $-250.")
+    assert -5.0 in values
+    assert -250.0 in values
+
+
 # -- grounded_numbers --------------------------------------------------------
 
 

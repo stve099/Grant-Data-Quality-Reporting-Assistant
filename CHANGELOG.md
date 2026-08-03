@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.0 — 2026-08-01
+
+### Added
+- **OpenAI-compatible AI provider** — `GRANT_ASSISTANT_PROVIDER` selects the backend
+  (`anthropic` default | `openai` | `ollama`). The new `OpenAICompatibleProvider`
+  implements `complete()`, streaming, and the agent tool loop, converting the
+  Anthropic-shaped tool schemas to the OpenAI function-calling format internally so
+  the rest of the codebase is unchanged. Ollama runs keyless against a local server
+  and works against Ollama Cloud or any OpenAI-compatible endpoint via `OPENAI_BASE_URL`.
+  Install with `uv sync --extra openai`. Extended thinking remains Anthropic-only and
+  degrades to plain completion elsewhere. Tests cover request construction, the
+  tool-result round-trip, streaming, provider selection, and agent integration with a
+  stubbed client.
+
+### Changed
+- `ai_available()` and `get_provider()` now dispatch on the selected provider's
+  credentials rather than only `ANTHROPIC_API_KEY`.
+
 ## 1.2.0 — 2026-08-01
 
 ### Added

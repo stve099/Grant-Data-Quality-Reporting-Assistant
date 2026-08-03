@@ -39,12 +39,16 @@ Create a GitHub Release from the tag and paste the 1.1.0 section of `CHANGELOG.m
 
 1. Go to https://share.streamlit.io → **New app** → pick your repo/branch.
 2. Main file path: `src/grant_assistant/ui/app.py`.
-3. (Optional) Secrets → add `ANTHROPIC_API_KEY` to enable AI chat in the demo.
+3. (Optional) Secrets → add `ANTHROPIC_API_KEY` to enable AI chat in the demo. To use
+   OpenAI instead, add `GRANT_ASSISTANT_PROVIDER=openai` and `OPENAI_API_KEY`.
 4. After it deploys, share the demo link with data preloaded:
    `https://<your-app>.streamlit.app/?demo=housing_program_flawed.csv&profile=housing_stability`
 5. Put that link at the top of the README.
 
-Streamlit Cloud installs from `pyproject.toml` automatically. The demo uses only the
+Streamlit Cloud installs from `pyproject.toml` automatically, base dependencies only — the
+`openai` extra is not installed, so the OpenAI/Ollama backend needs a deployment that runs
+`uv sync --extra openai` (the Docker image does). Without it the app falls back to
+deterministic mode rather than erroring. The demo uses only the
 synthetic sample data — remind viewers not to upload real client data to a public demo.
 
 ## 5. LinkedIn blurb
