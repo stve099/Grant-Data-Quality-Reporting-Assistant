@@ -23,6 +23,24 @@ logger = logging.getLogger(__name__)
 
 SMALL_SAMPLE_N = 10
 
+#: Responses that record an absence of data rather than a demographic value.
+#: Reports routinely quote these as one "not reported" figure per field. Without
+#: a calculated total the model has to add the categories itself, which is the
+#: arithmetic the grounding contract forbids — so the sum is computed here.
+NOT_REPORTED_VALUES = frozenset(
+    {
+        "missing",
+        "unknown",
+        "declined",
+        "refused",
+        "client refused",
+        "client doesn't know",
+        "data not collected",
+        "not collected",
+        "prefer not to say",
+    }
+)
+
 
 def _rate(numerator: int, denominator: int) -> float | None:
     """Percentage rate, or None when the denominator is zero."""
@@ -127,6 +145,8 @@ class AnalyticsResult(BaseModel):
 
     # Demographics
     demographics: dict[str, dict[str, int]] = Field(default_factory=dict)
+    #: field -> count of responses that record no demographic value.
+    unreported_demographics: dict[str, int] = Field(default_factory=dict)
     age_groups: dict[str, int] = Field(default_factory=dict)
     household_size_distribution: dict[str, int] = Field(default_factory=dict)
 
@@ -174,6 +194,8 @@ class AnalyticsResult(BaseModel):
         for fu in self.followups:
             out[f"followup_{fu.key}_completion_rate"] = fu.completion_rate
             out[f"followup_{fu.key}_overdue"] = fu.overdue
+        for field_name, count in self.unreported_demographics.items():
+            out[f"unreported_{field_name}"] = count
         return out
 
 
@@ -304,6 +326,15 @@ def compute_analytics(
         )
         demographics[col] = {str(k): int(v) for k, v in counts.items()}
 
+    unreported_demographics = {
+        field_name: sum(
+            count
+            for value, count in counts.items()
+            if value.strip().casefold() in NOT_REPORTED_VALUES
+        )
+        for field_name, counts in demographics.items()
+    }
+
     age_groups: dict[str, int] = {}
     ages = df[schema.AGE]
     valid_ages = ages[(ages.notna()) & (ages >= 0) & (ages <= profile.max_age)]
@@ -410,6 +441,7 @@ def compute_analytics(
         assessment_completion_rate=assess_rate,
         exit_plan_completion_rate=plan_rate,
         demographics=demographics,
+        unreported_demographics=unreported_demographics,
         age_groups=age_groups,
         household_size_distribution=size_dist,
         programs=programs,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from grant_assistant.analytics import compute_analytics
+from grant_assistant.analytics.metrics import NOT_REPORTED_VALUES
 from grant_assistant.ingestion import prepare_dataset
 from tests.conftest import TODAY, VALID_EXITED, make_row, make_source_df
 
@@ -136,6 +137,28 @@ def test_demographics_and_age_groups(analytics):
     assert analytics.demographics["gender"]["Female"] == 6
     assert analytics.age_groups.get("25–34") == 6
     assert analytics.household_size_distribution == {"1": 5, "2": 1}
+
+
+def test_unreported_demographics_totals_the_absent_categories(analytics_flawed):
+    """The model must be able to retrieve this instead of summing categories."""
+    gender = analytics_flawed.demographics["gender"]
+    expected = sum(
+        count for value, count in gender.items() if value.strip().casefold() in NOT_REPORTED_VALUES
+    )
+    assert expected > 0, "flawed sample should contain unreported responses"
+    assert analytics_flawed.unreported_demographics["gender"] == expected
+    # Real values are never counted as absent.
+    assert analytics_flawed.unreported_demographics["gender"] < sum(gender.values())
+
+
+def test_unreported_demographics_are_retrievable_as_metrics(analytics_flawed):
+    lookup = analytics_flawed.metric_lookup()
+    assert lookup["unreported_gender"] == analytics_flawed.unreported_demographics["gender"]
+
+
+def test_unreported_is_zero_when_every_response_is_recorded(analytics):
+    """The clean sample uses only controlled values, so nothing is unreported."""
+    assert analytics.unreported_demographics["gender"] == 0
 
 
 def test_monthly_trends(analytics):

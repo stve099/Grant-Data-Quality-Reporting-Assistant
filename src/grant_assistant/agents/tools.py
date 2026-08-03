@@ -87,7 +87,9 @@ class AnalystTools:
                 "description": (
                     "Aggregated demographic breakdown for one field: gender, race, "
                     "ethnicity, veteran_status, disability_status, age_groups, or "
-                    "household_size."
+                    "household_size. Includes 'not_reported', the calculated total of "
+                    "the missing/unknown/declined categories — use it instead of adding "
+                    "those categories together yourself."
                 ),
                 "input_schema": {
                     "type": "object",
@@ -208,4 +210,9 @@ class AnalystTools:
                 "error": f"No demographic field '{field}'.",
                 "available": [*self.analytics.demographics, "age_groups", "household_size"],
             }
-        return {"field": field, "counts": sanitize_mapping(dict(counts))}  # type: ignore[arg-type]
+        return {
+            "field": field,
+            "counts": sanitize_mapping(dict(counts)),  # type: ignore[arg-type]
+            # Supplied so the model never has to sum the categories itself.
+            "not_reported": self.analytics.unreported_demographics.get(field, 0),
+        }
