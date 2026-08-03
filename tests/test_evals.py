@@ -263,6 +263,72 @@ def test_ai_report_records_provider_and_model(analytics_flawed, audit_flawed, pr
     assert "Backend: ollama / llama3.1" in report.as_markdown()
 
 
+def test_misattributed_number_is_caught_though_globally_allowed(ctx, analytics_flawed):
+    """The false negative this check exists for.
+
+    A value that belongs to some other field passes the global allowlist — it
+    was produced by *a* calculation. Scoping to the source the answer names
+    catches it.
+    """
+    from grant_assistant.evals.graders import allowed_numbers
+
+    gender_values = set(analytics_flawed.demographics["gender"].values())
+    gender_values.add(analytics_flawed.unreported_demographics["gender"])
+    # A number that exists in the dataset but is not a gender count.
+    intruder = next(
+        v
+        for v in sorted(allowed_numbers(ctx))
+        if float(v).is_integer() and 20 < v < 100 and v not in gender_values
+    )
+    grounded = grade_answer(
+        f"Responses by gender ({intruder:g}) were incomplete.",
+        _case(graders=["grounded_numbers"]),
+        ctx,
+    )[0]
+    assert not grounded.passed
+    assert "cited source" in grounded.detail
+
+
+def test_correct_value_for_the_cited_source_passes(ctx, analytics_flawed):
+    real = analytics_flawed.unreported_demographics["gender"]
+    assert grade_answer(
+        f"gender ({real:g}) responses were not reported.",
+        _case(graders=["grounded_numbers"]),
+        ctx,
+    )[0].passed
+
+
+def test_unlabeled_numbers_are_left_to_the_global_check(ctx, analytics_flawed):
+    """No claimed source means no scoped check — guessing would cause false alarms."""
+    total = analytics_flawed.total_enrollments
+    assert grade_answer(
+        f"The program served {total} households.",
+        _case(graders=["grounded_numbers"]),
+        ctx,
+    )[0].passed
+
+
+def test_unknown_labels_are_not_scoped(ctx, analytics_flawed):
+    """'Notes:' is not a data source; it must not be graded as one."""
+    total = analytics_flawed.total_enrollments
+    assert grade_answer(
+        f"Notes: {total} households were served.",
+        _case(graders=["grounded_numbers"]),
+        ctx,
+    )[0].passed
+
+
+def test_labeled_numbers_normalizes_markdown_and_case():
+    from grant_assistant.evals.graders import labeled_numbers, resolve_source
+
+    pairs = labeled_numbers("**Veteran Status:** 11 and gender (17)")
+    sources = {"veteran_status": set(), "gender": set()}
+    resolved = {resolve_source(label, sources): value for label, value in pairs}
+    assert resolved["veteran_status"] == 11.0
+    # The preceding word must not become part of the source name.
+    assert resolved["gender"] == 17.0
+
+
 def test_summarize_runs_separates_stable_from_intermittent():
     """A case that passes 2 of 3 runs is the finding one run would have hidden."""
     from grant_assistant.evals.graders import GraderResult
