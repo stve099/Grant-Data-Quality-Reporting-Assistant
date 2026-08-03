@@ -63,6 +63,11 @@ def test_measure_ids_are_not_read_as_negative_numbers():
     assert values == []
 
 
+def test_compound_rule_id_lists_are_stripped_whole():
+    """Models cite related rules as "DQ-050/051/052"; the tail has no prefix."""
+    assert extract_numbers("See DQ-050/051/052 for the overdue follow-ups.") == []
+
+
 def test_hyphenated_words_and_ranges_are_not_negatives():
     values = extract_numbers("Enrollment rose from mid-2024 through the 1-5 range.")
     assert all(v >= 0 for v in values), values
@@ -230,6 +235,69 @@ def test_report_serializes(agent, tmp_path):
     paths = write_report(report, tmp_path)
     assert paths["markdown"].exists()
     assert paths["json"].exists()
+
+
+def test_deterministic_report_records_no_backend(agent):
+    report = run_evals(agent, cases=default_cases()[:1])
+    assert report.provider is None
+    assert report.model is None
+    assert report.backend == "deterministic"
+
+
+def test_ai_report_records_provider_and_model(analytics_flawed, audit_flawed, profile):
+    """Two runs of the same dataset must be distinguishable by backend."""
+
+    class FakeProvider:
+        name = "ollama"
+        model = "llama3.1"
+
+        def complete(self, system, messages, max_tokens=1500):
+            return "260 enrollments."
+
+    agent = DataAnalystAgent(analytics_flawed, audit_flawed, profile, provider=FakeProvider())
+    report = run_evals(agent, cases=default_cases()[:1])
+    assert report.mode == "ai"
+    assert report.provider == "ollama"
+    assert report.model == "llama3.1"
+    assert report.backend == "ollama / llama3.1"
+    assert "Backend: ollama / llama3.1" in report.as_markdown()
+
+
+def test_summarize_runs_separates_stable_from_intermittent():
+    """A case that passes 2 of 3 runs is the finding one run would have hidden."""
+    from grant_assistant.evals.graders import GraderResult
+    from grant_assistant.evals.runner import CaseResult, EvalReport, summarize_runs
+
+    def report(*passed: bool) -> EvalReport:
+        return EvalReport(
+            mode="ai",
+            results=[
+                CaseResult(
+                    case_id=f"case-{i}",
+                    category="x",
+                    question="q",
+                    answer="a",
+                    graders=[GraderResult(grader="g", passed=p)],
+                )
+                for i, p in enumerate(passed)
+            ],
+        )
+
+    #        case-0  case-1  case-2
+    runs = [
+        report(True, True, False),
+        report(True, False, False),
+        report(True, True, False),
+    ]
+    s = summarize_runs(runs)
+    assert s.runs == 3
+    assert s.always_passed == ["case-0"]
+    assert s.flaky == ["case-1"]
+    assert s.never_passed == ["case-2"]
+    assert s.pass_rates == [66.7, 33.3, 66.7]
+    assert s.mean_pass_rate == 55.6
+    assert s.min_pass_rate == 33.3
+    assert s.max_pass_rate == 66.7
 
 
 def test_case_execution_error_is_recorded(analytics_flawed, audit_flawed, profile):

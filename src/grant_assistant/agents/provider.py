@@ -33,6 +33,12 @@ API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 
 #: Factual answers should be reproducible, so default to greedy decoding.
 DEFAULT_TEMPERATURE = 0.0
+#: Wall-clock ceiling for a single API call. Without it a hung request blocks the
+#: Streamlit UI indefinitely with no feedback; a local model on cold start and a
+#: long narrative both need well under this.
+DEFAULT_TIMEOUT_SECONDS = 120.0
+#: Transient 429/5xx retries, handled inside the SDKs with backoff.
+DEFAULT_MAX_RETRIES = 2
 #: Extended thinking requires temperature 1.0 and a budget below max_tokens.
 THINKING_BUDGET_TOKENS = 2000
 
@@ -108,6 +114,8 @@ class AnthropicProvider:
         api_key: str | None = None,
         temperature: float = DEFAULT_TEMPERATURE,
         use_caching: bool = True,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         key = api_key or os.environ.get(API_KEY_ENV_VAR, "").strip()
         if not key:
@@ -119,7 +127,7 @@ class AnthropicProvider:
             import anthropic
         except ImportError as exc:  # pragma: no cover - dependency is declared
             raise AIProviderError("The 'anthropic' package is not installed.") from exc
-        self._client = anthropic.Anthropic(api_key=key)
+        self._client = anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=max_retries)
         self.model = model or os.environ.get(MODEL_ENV_VAR, "").strip() or DEFAULT_MODEL
         self.temperature = temperature
         self.use_caching = use_caching
@@ -304,6 +312,8 @@ class OpenAICompatibleProvider:
         api_key: str | None = None,
         base_url: str | None = None,
         temperature: float = DEFAULT_TEMPERATURE,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         if kind not in ("openai", "ollama"):
             raise AIProviderError(f"Unknown OpenAI-compatible provider kind: {kind!r}")
@@ -330,7 +340,11 @@ class OpenAICompatibleProvider:
             raise AIProviderError(
                 "The 'openai' package is not installed. Install it with: uv sync --extra openai"
             ) from exc
-        client_kwargs: dict[str, Any] = {"api_key": key}
+        client_kwargs: dict[str, Any] = {
+            "api_key": key,
+            "timeout": timeout,
+            "max_retries": max_retries,
+        }
         if base:
             client_kwargs["base_url"] = base
         # Typed as Any: the OpenAI SDK's response/tool-call unions are over-narrow

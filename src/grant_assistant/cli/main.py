@@ -398,11 +398,20 @@ def run_eval(
     model_grader: Annotated[
         bool, typer.Option(help="Also judge answers against their rubric with the model.")
     ] = False,
+    runs: Annotated[
+        int,
+        typer.Option(
+            "--runs",
+            min=1,
+            help="Repeat the suite N times and report the spread. A hosted model "
+            "is not reproducible, so one run measures luck as much as quality.",
+        ),
+    ] = 1,
 ) -> None:
     """Grade the AI analyst against the prompt-evaluation dataset."""
     from grant_assistant import schema
     from grant_assistant.evals import load_cases, run_evals
-    from grant_assistant.evals.runner import write_report
+    from grant_assistant.evals.runner import summarize_runs, write_report
 
     result = _run(data_file, profile, config_dir)
     agent = result.make_agent(use_ai=ai)
@@ -412,12 +421,21 @@ def run_eval(
         "Prompt Evaluation — "
         + ("AI mode" if agent.ai_enabled else "deterministic mode (no API key)")
     )
-    report = run_evals(
-        agent,
-        cases=load_cases(cases),
-        client_ids=client_ids,
-        use_model_grader=model_grader,
-    )
+    loaded_cases = load_cases(cases)
+    reports = []
+    for run_index in range(runs):
+        if runs > 1:
+            typer.secho(f"  run {run_index + 1}/{runs}...", fg=typer.colors.BRIGHT_BLACK)
+        reports.append(
+            run_evals(
+                agent,
+                cases=loaded_cases,
+                client_ids=client_ids,
+                use_model_grader=model_grader,
+            )
+        )
+    # The written report is the final run; the spread is reported to the console.
+    report = reports[-1]
 
     for case in report.results:
         color = typer.colors.GREEN if case.passed else typer.colors.RED
@@ -439,9 +457,30 @@ def run_eval(
         bold=True,
     )
 
+    if runs > 1:
+        stability = summarize_runs(reports)
+        _echo_header(f"Stability across {stability.runs} runs")
+        typer.echo("  per run:  " + ", ".join(f"{r}%" for r in stability.pass_rates))
+        typer.secho(
+            f"  mean {stability.mean_pass_rate}%  "
+            f"(min {stability.min_pass_rate}%, max {stability.max_pass_rate}%)",
+            bold=True,
+        )
+        if stability.never_passed:
+            typer.secho(
+                f"  always failed: {', '.join(stability.never_passed)}", fg=typer.colors.RED
+            )
+        if stability.flaky:
+            # Intermittent failures are the finding: a rule obeyed most of the
+            # time is not obeyed, and a single green run would have hidden it.
+            typer.secho(f"  intermittent:  {', '.join(stability.flaky)}", fg=typer.colors.YELLOW)
+        if not stability.never_passed and not stability.flaky:
+            typer.secho("  every case passed every run.", fg=typer.colors.GREEN)
+
     paths = write_report(report, output)
-    typer.secho(f"\nReport: {paths['markdown']}", fg=typer.colors.GREEN)
-    if report.passed != report.total:
+    label = " (final run)" if runs > 1 else ""
+    typer.secho(f"\nReport{label}: {paths['markdown']}", fg=typer.colors.GREEN)
+    if any(r.passed != r.total for r in reports):
         raise typer.Exit(code=1)
 
 

@@ -49,8 +49,20 @@ class EvalReport(BaseModel):
 
     generated_at: datetime = Field(default_factory=datetime.now)
     mode: str = Field(description="'ai' or 'deterministic'")
+    #: Which backend answered. Without these a 12/12 and a later 9/12 report are
+    #: indistinguishable once the provider or model changes, which would make the
+    #: harness useless as a regression detector.
+    provider: str | None = Field(default=None, description="Provider name in AI mode.")
+    model: str | None = Field(default=None, description="Model id in AI mode.")
     dataset: str = "built-in"
     results: list[CaseResult] = Field(default_factory=list)
+
+    @property
+    def backend(self) -> str:
+        """Human-readable backend label: 'ollama / llama3.1', or the mode alone."""
+        if self.provider is None:
+            return self.mode
+        return f"{self.provider} / {self.model}" if self.model else self.provider
 
     @property
     def total(self) -> int:
@@ -88,6 +100,7 @@ class EvalReport(BaseModel):
             "",
             f"- Generated: {self.generated_at:%Y-%m-%d %H:%M}",
             f"- Mode: **{self.mode}**",
+            f"- Backend: {self.backend}",
             f"- Dataset: {self.dataset}",
             f"- Result: **{self.passed}/{self.total} cases passed ({self.pass_rate}%)**",
             "",
@@ -110,6 +123,60 @@ class EvalReport(BaseModel):
                 lines.append(f"- {grader.grader}: {mark}{detail}")
             lines.append("")
         return "\n".join(lines)
+
+
+class RunStability(BaseModel):
+    """Spread of results across repeated runs of the same dataset.
+
+    A hosted model is not reproducible even at temperature 0, so a single run
+    reports luck as much as quality. Repeating the suite separates cases that
+    always pass from the ones that only usually do — and it is the intermittent
+    ones that matter, because a grounding rule obeyed 4 times in 5 is not obeyed.
+    """
+
+    pass_rates: list[float] = Field(description="Pass rate of each run, in order.")
+    case_pass_counts: dict[str, int] = Field(description="case id -> runs passed.")
+
+    @property
+    def runs(self) -> int:
+        return len(self.pass_rates)
+
+    @property
+    def mean_pass_rate(self) -> float:
+        return round(sum(self.pass_rates) / len(self.pass_rates), 1) if self.pass_rates else 0.0
+
+    @property
+    def min_pass_rate(self) -> float:
+        return min(self.pass_rates) if self.pass_rates else 0.0
+
+    @property
+    def max_pass_rate(self) -> float:
+        return max(self.pass_rates) if self.pass_rates else 0.0
+
+    @property
+    def always_passed(self) -> list[str]:
+        return sorted(c for c, n in self.case_pass_counts.items() if n == self.runs)
+
+    @property
+    def never_passed(self) -> list[str]:
+        return sorted(c for c, n in self.case_pass_counts.items() if n == 0)
+
+    @property
+    def flaky(self) -> list[str]:
+        """Cases that passed some runs but not all — the interesting ones."""
+        return sorted(c for c, n in self.case_pass_counts.items() if 0 < n < self.runs)
+
+
+def summarize_runs(reports: list[EvalReport]) -> RunStability:
+    """Aggregate repeated runs of the same dataset into a stability summary."""
+    counts: dict[str, int] = {}
+    for report in reports:
+        for result in report.results:
+            counts[result.case_id] = counts.get(result.case_id, 0) + int(result.passed)
+    return RunStability(
+        pass_rates=[r.pass_rate for r in reports],
+        case_pass_counts=counts,
+    )
 
 
 def run_evals(
@@ -165,8 +232,13 @@ def run_evals(
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         results = list(pool.map(run_case, cases))
 
+    provider = agent.provider if agent.ai_enabled else None
     report = EvalReport(
         mode="ai" if agent.ai_enabled else "deterministic",
+        # `model` is not part of the AIProvider protocol, only of the concrete
+        # implementations, so read it defensively.
+        provider=getattr(provider, "name", None),
+        model=getattr(provider, "model", None),
         results=results,
     )
     logger.info(

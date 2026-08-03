@@ -30,8 +30,10 @@ _UNIVERSAL_ALLOWED = {0.0, 1.0, 10.0, 100.0}
 
 #: Any UPPERCASE-prefixed identifier: audit rules (DQ-3) and the measure IDs
 #: each profile defines (HS-1). Must be stripped before number extraction or the
-#: hyphen reads as a minus sign.
-_IDENTIFIER = re.compile(r"\b[A-Z]{2,}-\d+\b")
+#: hyphen reads as a minus sign. The trailing group covers the compound form
+#: models use when citing several related rules at once ("DQ-050/051/052"),
+#: whose later members carry no prefix of their own.
+_IDENTIFIER = re.compile(r"\b[A-Z]{2,}-\d+(?:/\d+)*\b")
 _ISO_DATE = re.compile(r"\b\d{4}-\d{2}(-\d{2})?\b")
 #: Prose dates ("Aug 3, 2026", "June 2025"). Stripped whole: removing only the
 #: year would leave a bare day number that no calculation produced.

@@ -16,10 +16,12 @@ import pytest
 
 from grant_assistant.agents import DataAnalystAgent
 from grant_assistant.agents.provider import (
+    DEFAULT_MAX_RETRIES,
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_OPENAI_MODEL,
     DEFAULT_TEMPERATURE,
+    DEFAULT_TIMEOUT_SECONDS,
     AIProviderError,
     AnthropicProvider,
     OpenAICompatibleProvider,
@@ -148,6 +150,24 @@ def test_openai_default_model(monkeypatch):
 def test_model_override_from_env(monkeypatch):
     p = _make_provider(monkeypatch, "openai", [_content_response()], GRANT_ASSISTANT_MODEL="gpt-4o")
     assert p.model == "gpt-4o"
+
+
+def test_client_gets_timeout_and_retries(monkeypatch):
+    """A hung request must not block the UI forever."""
+    monkeypatch.setenv("GRANT_ASSISTANT_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    recorded: dict[str, Any] = {}
+
+    import openai
+
+    def fake_openai(**kwargs: Any) -> Any:
+        recorded.update(kwargs)
+        return SimpleNamespace(chat=SimpleNamespace(completions=FakeChatCompletions([])))
+
+    monkeypatch.setattr(openai, "OpenAI", fake_openai)  # type: ignore[attr-defined]
+    OpenAICompatibleProvider(kind="openai")
+    assert recorded["timeout"] == DEFAULT_TIMEOUT_SECONDS
+    assert recorded["max_retries"] == DEFAULT_MAX_RETRIES
 
 
 def test_unknown_kind_raises():
