@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from dotenv import load_dotenv
 
 from grant_assistant import __version__
+from grant_assistant.env import load_environment
 
 app = typer.Typer(
     name="grant-assistant",
@@ -45,7 +45,7 @@ def _run(data_file: Path, profile: str, config_dir: Path | None):
     from grant_assistant.workflow import run_pipeline, setup_logging
 
     setup_logging()
-    load_dotenv()
+    load_environment()
     try:
         return run_pipeline(data_file, profile, config_dir)
     except Exception as exc:

@@ -14,6 +14,7 @@ from grant_assistant.audit import run_audit
 from grant_assistant.configuration import GrantProfile, load_profile
 from grant_assistant.datagen import generate_clean_dataset, inject_issues
 from grant_assistant.datagen.generator import H
+from grant_assistant.env import SKIP_DOTENV_ENV_VAR
 from grant_assistant.ingestion import PreparedData, prepare_dataset
 from grant_assistant.models import AuditResult
 
@@ -29,19 +30,16 @@ def _isolate_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Isolate tests from the developer's own provider configuration.
 
     Two leaks to close. First, provider selector vars already exported in the
-    shell. Second, and less obvious: the CLI calls ``load_dotenv()``, which
-    writes a real ``.env`` into ``os.environ`` for the whole pytest process the
-    moment the CLI is exercised — so a developer with a working ``.env`` saw
-    failures that CI never would. Neutralizing the bound name keeps an on-disk
-    ``.env`` out of the suite.
+    shell. Second, and less obvious: both entry points read a real ``.env`` into
+    ``os.environ`` for the whole pytest process the moment either is exercised —
+    so a developer with a working ``.env`` saw failures that CI never would.
 
-    Only ``cli.main`` is patched. ``ui.app`` also calls ``load_dotenv()``, but
-    patching it by name would import Streamlit into every test — and its
-    module-level call would fire before the patch anyway. No test imports it.
-
-    ``ANTHROPIC_API_KEY`` is cleared here too; tests that want a provider set
-    their own values via ``monkeypatch.setenv``.
+    Setting the documented opt-out covers both, including the Streamlit app,
+    whose ``load_environment()`` runs at import and so could never be patched in
+    time by name. ``ANTHROPIC_API_KEY`` is cleared here too; tests that want a
+    provider set their own values via ``monkeypatch.setenv``.
     """
+    monkeypatch.setenv(SKIP_DOTENV_ENV_VAR, "1")
     for var in (
         "GRANT_ASSISTANT_PROVIDER",
         "GRANT_ASSISTANT_MODEL",
@@ -50,8 +48,6 @@ def _isolate_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "OPENAI_BASE_URL",
     ):
         monkeypatch.delenv(var, raising=False)
-
-    monkeypatch.setattr("grant_assistant.cli.main.load_dotenv", lambda *a, **k: False)
 
 
 # A fully valid ACTIVE enrollment in source-file format.

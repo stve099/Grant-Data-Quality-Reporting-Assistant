@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from dotenv import load_dotenv
 
 from grant_assistant import schema
 from grant_assistant.agents import DataAnalystAgent, get_provider
@@ -38,6 +37,7 @@ from grant_assistant.analytics.charts import (
 from grant_assistant.analytics.metrics import available_measure_metrics
 from grant_assistant.audit import list_rules, run_audit
 from grant_assistant.configuration import ProfileValidationError, list_profiles, load_profile_file
+from grant_assistant.env import load_environment
 from grant_assistant.ingestion import IngestionError, load_dataset, prepare_dataset
 from grant_assistant.models import SEVERITY_ORDER
 from grant_assistant.reporting import (
@@ -50,7 +50,7 @@ from grant_assistant.reporting import (
 from grant_assistant.ui import theme
 from grant_assistant.ui.theme import Kpi
 
-load_dotenv()
+load_environment()
 
 st.set_page_config(
     page_title="Grant Assistant — Data Quality & Reporting",
