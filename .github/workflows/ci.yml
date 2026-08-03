@@ -14,7 +14,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9
+        # v7 is the highest floating major astral-sh publishes; later releases
+        # exist only as exact tags (v9.0.0). v7 already runs on node24, which is
+        # the point of the bump, so track the major rather than pin a patch.
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
 
@@ -41,7 +44,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9
+        # v7 is the highest floating major astral-sh publishes; later releases
+        # exist only as exact tags (v9.0.0). v7 already runs on node24, which is
+        # the point of the bump, so track the major rather than pin a patch.
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -64,7 +70,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9
+        # v7 is the highest floating major astral-sh publishes; later releases
+        # exist only as exact tags (v9.0.0). v7 already runs on node24, which is
+        # the point of the bump, so track the major rather than pin a patch.
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
 
