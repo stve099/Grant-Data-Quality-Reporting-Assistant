@@ -562,6 +562,89 @@ def rules() -> None:
         )
 
 
+@app.command("record-run")
+def record_run_command(
+    data_file: Annotated[Path, typer.Argument(help="Dataset to audit and record.")],
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+    db: Annotated[Path, typer.Option("--db", help="History database.")] = Path("output/history.db"),
+    label: Annotated[str, typer.Option("--label", help="Name this run, e.g. 'Q3 FY25'.")] = "",
+) -> None:
+    """Audit a dataset and add the result to the history database."""
+    from grant_assistant.history import load_history, record_run
+
+    result = _run(data_file, profile, config_dir)
+    previous = load_history(db, result.profile.profile_id)
+    run_id = record_run(
+        result.profile,
+        result.audit,
+        result.analytics,
+        db,
+        label=label,
+        source=str(data_file),
+    )
+
+    _echo_header("Run recorded")
+    typer.echo(f"  Run #{run_id}  {label or '(unlabelled)'}")
+    typer.echo(f"  Score {result.audit.overall_score:.1f} ({result.audit.grade})")
+    if previous:
+        delta = result.audit.overall_score - previous[-1].score
+        color = typer.colors.GREEN if delta >= 0 else typer.colors.YELLOW
+        typer.secho(f"  {delta:+.1f} versus the previous run", fg=color)
+    typer.secho(f"\nHistory: {db}", fg=typer.colors.GREEN)
+
+
+@app.command()
+def history(
+    profile: Annotated[
+        str | None, typer.Option("--profile", "-p", help="Limit to one profile.")
+    ] = None,
+    db: Annotated[Path, typer.Option("--db", help="History database.")] = Path("output/history.db"),
+    metric: Annotated[
+        str | None, typer.Option("--metric", help="Also chart one metric over time.")
+    ] = None,
+) -> None:
+    """Show recorded runs and how data quality has moved."""
+    from grant_assistant.history import load_history, metric_series, score_trend
+
+    entries = load_history(db, profile)
+    if not entries:
+        typer.secho(
+            f"No history recorded yet in {db}. Add one with: grant-assistant record-run",
+            fg=typer.colors.YELLOW,
+        )
+        return
+
+    _echo_header("Run history")
+    typer.echo(f"  {'When':<17} {'Label':<14} {'Rows':>6} {'Score':>7} {'Find':>6} {'Block':>6}")
+    previous: float | None = None
+    for entry in entries:
+        arrow = ""
+        if previous is not None:
+            change = entry.score - previous
+            arrow = f"  {change:+.1f}"
+        typer.echo(
+            f"  {entry.recorded_at:%Y-%m-%d %H:%M}  {entry.label[:14]:<14} "
+            f"{entry.total_rows:>6} {entry.score:>6.1f}{entry.grade:>1} "
+            f"{entry.findings:>6} {entry.blocking:>6}{arrow}"
+        )
+        previous = entry.score
+
+    trend = score_trend(entries)
+    if trend is not None:
+        color = typer.colors.GREEN if trend >= 0 else typer.colors.YELLOW
+        typer.secho(f"\n  Overall change across {len(entries)} runs: {trend:+.1f}", fg=color)
+
+    if metric:
+        series = metric_series(entries, metric)
+        if not series:
+            typer.secho(f"\n  No recorded values for '{metric}'.", fg=typer.colors.YELLOW)
+        else:
+            _echo_header(metric)
+            for when, value in series:
+                typer.echo(f"  {when:%Y-%m-%d}  {value:>12,.1f}")
+
+
 @app.command("data-dictionary")
 def data_dictionary(
     profile: ProfileOpt = "housing_stability",
