@@ -101,10 +101,12 @@ def audit(
                 f"{issue.rule_id}  {issue.severity.label:<13} {issue.record_count:>4}  "
                 f"{issue.rule_name}{flag}"
             )
-    if a.injection_warnings:
+    if a.injection_warnings or a.pii_warnings:
         _echo_header("Security warnings")
         for warning in a.injection_warnings:
             typer.secho(f"  ! {warning}", fg=typer.colors.YELLOW)
+        for warning in a.pii_warnings:
+            typer.secho(f"  ! {warning}", fg=typer.colors.RED)
 
     _echo_header("Executive summary")
     typer.echo(a.executive_summary())

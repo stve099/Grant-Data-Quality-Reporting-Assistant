@@ -163,6 +163,11 @@ def generate_insights(
                 f"{share:.0f}% of exits have no destination recorded, so the true "
                 "successful-exit and permanent-housing rates are likely understated."
             )
+        if audit.pii_warnings:
+            r.data_quality_risks.append(
+                f"{len(audit.pii_warnings)} column(s) appear to contain personal information; "
+                "this dataset should hold pseudonymous identifiers only."
+            )
         if audit.injection_warnings:
             r.data_quality_risks.append(
                 f"{len(audit.injection_warnings)} cell(s) contain text resembling prompt-"

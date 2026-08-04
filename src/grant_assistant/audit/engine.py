@@ -109,6 +109,7 @@ def run_audit(
         score_by_category=by_category,
         score_by_program=by_program,
         injection_warnings=scan_dataframe_for_injection(data.raw),
+        pii_warnings=data.pii_warnings,
     )
     logger.info(
         "Audit complete: %d findings across %d rules, score %.1f (%s)",

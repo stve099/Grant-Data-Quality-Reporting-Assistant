@@ -89,6 +89,9 @@ class AuditResult(BaseModel):
     score_by_category: dict[str, float] = Field(default_factory=dict)
     score_by_program: dict[str, float] = Field(default_factory=dict)
     injection_warnings: list[str] = Field(default_factory=list)
+    #: Columns that look like direct identifiers. Advisory: a false positive must
+    #: never block a legitimate upload, so these never affect the score or grade.
+    pii_warnings: list[str] = Field(default_factory=list)
 
     @property
     def issue_count_by_severity(self) -> dict[str, int]:

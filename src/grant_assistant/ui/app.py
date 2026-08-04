@@ -223,6 +223,12 @@ def page_upload() -> None:
                 f"Processed **{uploaded.name}** — {len(prepared.df)} rows, data quality score "
                 f"{audit.overall_score:.1f}/100 (grade {audit.grade})."
             )
+            if audit.pii_warnings:
+                st.error(
+                    "**Possible personal information in this upload.** This tool is built "
+                    "for pseudonymous extracts — remove or hash these columns and re-upload.\n\n- "
+                    + "\n- ".join(audit.pii_warnings[:5])
+                )
             if audit.injection_warnings:
                 st.warning(
                     "Security note — possible prompt-injection text found in uploaded cells. "
@@ -350,6 +356,11 @@ def page_audit() -> None:
                 f"- `{i.rule_id}` {i.rule_name} — {i.record_count} record(s)"
                 for i in audit.blocking_issues
             )
+        )
+    if audit.pii_warnings:
+        st.error(
+            f"{len(audit.pii_warnings)} column(s) look like they contain personal information. "
+            "See the Upload page for detail — this tool expects pseudonymous extracts."
         )
     if audit.injection_warnings:
         st.warning(

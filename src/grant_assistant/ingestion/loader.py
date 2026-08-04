@@ -17,6 +17,7 @@ import pandas as pd
 
 from grant_assistant import schema
 from grant_assistant.configuration import GrantProfile
+from grant_assistant.security.pii import pii_warnings
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,10 @@ class PreparedData:
         mapped_columns: Source header -> canonical column actually applied.
         unmapped_source_columns: Source headers not used by the profile.
         missing_canonical_columns: Canonical columns absent from the upload.
+        pii_warnings: Columns in the *source* file that look like direct
+            identifiers. Computed here rather than downstream because mapping
+            drops unmapped columns, and a stray name or SSN column is unmapped
+            by definition — scanning after the drop would never see it.
     """
 
     df: pd.DataFrame
@@ -98,6 +103,7 @@ class PreparedData:
     mapped_columns: dict[str, str] = field(default_factory=dict)
     unmapped_source_columns: list[str] = field(default_factory=list)
     missing_canonical_columns: list[str] = field(default_factory=list)
+    pii_warnings: list[str] = field(default_factory=list)
 
     @property
     def row_numbers(self) -> pd.Series:
@@ -179,4 +185,6 @@ def prepare_dataset(df: pd.DataFrame, profile: GrantProfile) -> PreparedData:
         mapped_columns=mapped,
         unmapped_source_columns=unmapped,
         missing_canonical_columns=missing,
+        # Scanned against the source frame, before unmapped columns are dropped.
+        pii_warnings=pii_warnings(df),
     )
