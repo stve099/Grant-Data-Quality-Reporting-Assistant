@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from docx.document import Document as DocumentType
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 
+from grant_assistant.reporting.chart_images import CHART_WIDTH_INCHES, figure_png
 from grant_assistant.reporting.context import ReportData
 
 logger = logging.getLogger(__name__)
@@ -53,10 +55,38 @@ def _bullets(doc: DocumentType, items: list[str]) -> None:
         doc.add_paragraph(item, style="List Bullet")
 
 
+def _add_chart(doc: DocumentType, charts: dict[str, object], key: str, caption: str = "") -> bool:
+    """Insert a chart if it exists and can be rendered. Returns whether it was.
+
+    Every step is optional: the chart may not apply to this dataset, and the
+    static backend may not be installed. A Word report without charts is still a
+    correct Word report, so absence never interrupts the build.
+    """
+    figure = charts.get(key)
+    if figure is None:
+        return False
+    png = figure_png(figure)  # type: ignore[arg-type]
+    if png is None:
+        return False
+    doc.add_picture(io.BytesIO(png), width=Inches(CHART_WIDTH_INCHES))
+    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if caption:
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = para.add_run(caption)
+        run.font.size = Pt(9)
+        run.font.italic = True
+        run.font.color.rgb = MUTED
+    return True
+
+
 def write_docx_report(report: ReportData, path: str | Path) -> Path:
     """Build the Word report and write it to ``path``."""
+    from grant_assistant.analytics.charts import standard_chart_set
+
     doc = Document()
     a = report.analytics
+    charts: dict[str, object] = standard_chart_set(a, report.audit)
 
     # --- Cover page ---------------------------------------------------------
     for _ in range(6):
@@ -171,6 +201,8 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
         ],
     )
 
+    _add_chart(doc, charts, "enrollment_trends", "Monthly enrollments and exits")
+
     # --- Housing outcomes ---------------------------------------------------
     doc.add_heading("Housing Outcomes", level=1)
     _add_table(
@@ -178,6 +210,8 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
         ["Exit destination", "Exits"],
         [[dest, str(count)] for dest, count in a.exit_destination_breakdown.items()],
     )
+
+    _add_chart(doc, charts, "exit_destinations", "Where households went at exit")
 
     # --- Income outcomes ----------------------------------------------------
     doc.add_heading("Income Outcomes", level=1)
@@ -193,6 +227,8 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
             ["Exits with complete income data", str(a.n_income_pairs)],
         ],
     )
+
+    _add_chart(doc, charts, "income_change", "Income change from entry to exit")
 
     # --- Follow-ups ---------------------------------------------------------
     doc.add_heading("Follow-Up Outcomes", level=1)
@@ -211,6 +247,8 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
         ],
     )
 
+    _add_chart(doc, charts, "followups", "Follow-up completion by interval")
+
     # --- Performance measures -----------------------------------------------
     doc.add_heading("Performance Measures", level=1)
     _add_table(
@@ -226,6 +264,8 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
             for m in a.measures
         ],
     )
+
+    _add_chart(doc, charts, "goal_vs_actual", "Performance measures against target")
 
     # --- Program comparison -------------------------------------------------
     doc.add_heading("Program Comparison", level=1)
@@ -251,6 +291,9 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
             for p in a.programs
         ],
     )
+
+    _add_chart(doc, charts, "program_comparison", "Enrollments and exits by program")
+    _add_chart(doc, charts, "outcome_rates", "Outcome rates by program")
 
     # --- Findings and recommendations ---------------------------------------
     doc.add_heading("Key Findings", level=1)
