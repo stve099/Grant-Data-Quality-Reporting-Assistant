@@ -37,6 +37,7 @@ from grant_assistant.analytics.charts import (
 from grant_assistant.analytics.metrics import available_measure_metrics
 from grant_assistant.audit import list_rules, run_audit
 from grant_assistant.configuration import ProfileValidationError, list_profiles, load_profile_file
+from grant_assistant.corrections import write_worksheet
 from grant_assistant.env import load_environment
 from grant_assistant.ingestion import IngestionError, load_dataset, prepare_dataset
 from grant_assistant.models import SEVERITY_ORDER
@@ -986,6 +987,22 @@ def page_exports() -> None:
             mime="text/csv",
             use_container_width=True,
         )
+        if st.button("Prepare correction worksheet", use_container_width=True):
+            st.session_state["export_corrections"] = write_worksheet(
+                p["audit"], out / "corrections.xlsx"
+            ).read_bytes()
+        if "export_corrections" in st.session_state:
+            st.download_button(
+                "corrections.xlsx",
+                data=st.session_state["export_corrections"],
+                file_name="corrections.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+            st.caption(
+                "Fill in 'Corrected Value', then apply it with: "
+                "`grant-assistant apply-corrections <data file> corrections.xlsx`"
+            )
 
     with col2:
         theme.panel_title("Analytics exports")

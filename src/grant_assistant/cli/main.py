@@ -562,5 +562,97 @@ def rules() -> None:
         )
 
 
+@app.command("correction-worksheet")
+def correction_worksheet(
+    data_file: Annotated[Path, typer.Argument(help="Dataset to build corrections for.")],
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+    output: Annotated[Path, typer.Option("--output", "-o", help="Worksheet path (.xlsx).")] = Path(
+        "output/corrections.xlsx"
+    ),
+) -> None:
+    """Export every flagged record to a worksheet staff can fill in and return."""
+    from grant_assistant.corrections import build_worksheet, write_worksheet
+
+    result = _run(data_file, profile, config_dir)
+    frame = build_worksheet(result.audit)
+    if frame.empty:
+        typer.secho(
+            "No correctable records — every finding is dataset-level.", fg=typer.colors.GREEN
+        )
+        return
+    path = write_worksheet(result.audit, output)
+
+    _echo_header("Correction worksheet")
+    typer.echo(f"  {len(frame)} record(s) across {frame['Rule'].nunique()} rule(s)")
+    blocking = int((frame["Blocking"] == "Yes").sum())
+    if blocking:
+        typer.secho(f"  {blocking} of them block submission", fg=typer.colors.YELLOW)
+    typer.secho(f"\nWorksheet: {path}", fg=typer.colors.GREEN)
+    typer.echo("Fill in 'Corrected Value', then run: grant-assistant apply-corrections")
+
+
+@app.command("apply-corrections")
+def apply_corrections_command(
+    data_file: Annotated[Path, typer.Argument(help="The dataset the worksheet came from.")],
+    worksheet: Annotated[Path, typer.Argument(help="Filled-in correction worksheet.")],
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the corrected dataset.")
+    ] = Path("output/corrected.csv"),
+) -> None:
+    """Apply a filled-in worksheet and re-audit to show what actually cleared."""
+    from grant_assistant.audit import run_audit
+    from grant_assistant.corrections import apply_corrections, read_worksheet
+    from grant_assistant.ingestion import load_dataset, prepare_dataset
+
+    before = _run(data_file, profile, config_dir)
+    try:
+        corrections = read_worksheet(worksheet)
+    except (ValueError, FileNotFoundError) as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+    if not corrections:
+        typer.secho(
+            "No corrections found — the 'Corrected Value' column is empty.",
+            fg=typer.colors.YELLOW,
+        )
+        return
+
+    source = load_dataset(data_file)
+    corrected, report = apply_corrections(source, corrections, before.prepared)
+
+    _echo_header("Applying corrections")
+    typer.echo(f"  {report.summary()}")
+    for reason in report.skipped:
+        typer.secho(f"  ! {reason}", fg=typer.colors.YELLOW)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.suffix.lower() in {".xlsx", ".xls"}:
+        corrected.to_excel(output, index=False)
+    else:
+        corrected.to_csv(output, index=False)
+
+    after = run_audit(prepare_dataset(corrected, before.profile), before.profile)
+
+    _echo_header("Before and after")
+    delta = after.overall_score - before.audit.overall_score
+    typer.echo(
+        f"  Data quality score  {before.audit.overall_score:.1f} -> {after.overall_score:.1f} "
+        f"({delta:+.1f})"
+    )
+    typer.echo(
+        f"  Findings            {before.audit.total_findings} -> {after.total_findings} "
+        f"({after.total_findings - before.audit.total_findings:+d})"
+    )
+    typer.echo(
+        f"  Blocking issues     {len(before.audit.blocking_issues)} -> {len(after.blocking_issues)}"
+    )
+    color = typer.colors.GREEN if delta >= 0 else typer.colors.RED
+    typer.secho(f"\nCorrected dataset: {output}", fg=color)
+
+
 if __name__ == "__main__":
     app()
