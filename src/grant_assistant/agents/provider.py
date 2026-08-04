@@ -39,6 +39,12 @@ DEFAULT_TEMPERATURE = 0.0
 DEFAULT_TIMEOUT_SECONDS = 120.0
 #: Transient 429/5xx retries, handled inside the SDKs with backoff.
 DEFAULT_MAX_RETRIES = 2
+
+#: Optional prices in USD per million tokens. Left to the environment because
+#: published rates change and differ per model; a stale built-in table would
+#: quietly report wrong money.
+INPUT_COST_ENV_VAR = "GRANT_ASSISTANT_INPUT_COST_PER_MTOK"
+OUTPUT_COST_ENV_VAR = "GRANT_ASSISTANT_OUTPUT_COST_PER_MTOK"
 #: Extended thinking requires temperature 1.0 and a budget below max_tokens.
 THINKING_BUDGET_TOKENS = 2000
 
@@ -78,29 +84,115 @@ class AIProvider(Protocol):
 
 
 class UsageStats:
-    """Token accounting for the most recent call, including cache performance."""
+    """Token accounting for the last call and for the session so far.
+
+    A single call's numbers answer "did the cache hit?"; the running totals
+    answer "what has this session cost?", which is the question anyone running
+    an eval sweep or a long chat actually has.
+    """
 
     def __init__(self) -> None:
         self.input_tokens = 0
         self.output_tokens = 0
         self.cache_creation_tokens = 0
         self.cache_read_tokens = 0
+        #: Tokens a reasoning model spent before writing its answer. Counted
+        #: against max_tokens, so an empty response with a healthy figure here
+        #: means the budget ran out during reasoning rather than the model
+        #: failing — a distinction that cost real debugging time.
+        self.reasoning_tokens = 0
+
+        self.calls = 0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_cache_read_tokens = 0
+        self.total_reasoning_tokens = 0
+
+    def _accumulate(self) -> None:
+        self.calls += 1
+        self.total_input_tokens += self.input_tokens
+        self.total_output_tokens += self.output_tokens
+        self.total_cache_read_tokens += self.cache_read_tokens
+        self.total_reasoning_tokens += self.reasoning_tokens
 
     def record(self, usage: Any) -> None:
+        """Record an Anthropic usage object."""
         self.input_tokens = getattr(usage, "input_tokens", 0) or 0
         self.output_tokens = getattr(usage, "output_tokens", 0) or 0
         self.cache_creation_tokens = getattr(usage, "cache_creation_input_tokens", 0) or 0
         self.cache_read_tokens = getattr(usage, "cache_read_input_tokens", 0) or 0
+        self.reasoning_tokens = 0
+        self._accumulate()
+
+    def record_openai(self, usage: Any) -> None:
+        """Record an OpenAI-shaped usage object, including its nested details.
+
+        Cached and reasoning counts live one level down and are absent on
+        endpoints that do not report them, so every lookup is defensive.
+        """
+        self.input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        self.output_tokens = getattr(usage, "completion_tokens", 0) or 0
+        self.cache_creation_tokens = 0
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        self.cache_read_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+        completion_details = getattr(usage, "completion_tokens_details", None)
+        self.reasoning_tokens = getattr(completion_details, "reasoning_tokens", 0) or 0
+        self._accumulate()
 
     @property
     def cache_hit(self) -> bool:
         return self.cache_read_tokens > 0
 
+    def estimated_cost_usd(self) -> float | None:
+        """Session cost, or None when no prices are configured.
+
+        Rates come from the environment rather than a built-in table: published
+        prices change, and a stale hardcoded number is worse than no number.
+        """
+        input_rate = _rate_from_env(INPUT_COST_ENV_VAR)
+        output_rate = _rate_from_env(OUTPUT_COST_ENV_VAR)
+        if input_rate is None and output_rate is None:
+            return None
+        return (self.total_input_tokens / 1_000_000) * (input_rate or 0.0) + (
+            self.total_output_tokens / 1_000_000
+        ) * (output_rate or 0.0)
+
     def summary(self) -> str:
-        return (
+        parts = [
             f"in={self.input_tokens} out={self.output_tokens} "
             f"cache_write={self.cache_creation_tokens} cache_read={self.cache_read_tokens}"
+        ]
+        if self.reasoning_tokens:
+            parts.append(f"reasoning={self.reasoning_tokens}")
+        return " ".join(parts)
+
+    def session_summary(self) -> str:
+        """One line covering the whole session, for a UI footer or a log."""
+        total = self.total_input_tokens + self.total_output_tokens
+        text = (
+            f"{self.calls} call(s), {total:,} tokens "
+            f"({self.total_input_tokens:,} in / {self.total_output_tokens:,} out)"
         )
+        if self.total_cache_read_tokens:
+            text += f", {self.total_cache_read_tokens:,} read from cache"
+        if self.total_reasoning_tokens:
+            text += f", {self.total_reasoning_tokens:,} reasoning"
+        cost = self.estimated_cost_usd()
+        if cost is not None:
+            text += f" — about ${cost:,.4f}"
+        return text
+
+
+def _rate_from_env(name: str) -> float | None:
+    """A price per million tokens, or None when unset or unparseable."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("%s is not a number: %r — ignoring.", name, raw)
+        return None
 
 
 class AnthropicProvider:
@@ -386,8 +478,7 @@ class OpenAICompatibleProvider:
     def _record(self, response: Any) -> None:
         usage = getattr(response, "usage", None)
         if usage is not None:
-            self.usage.input_tokens = getattr(usage, "prompt_tokens", 0) or 0
-            self.usage.output_tokens = getattr(usage, "completion_tokens", 0) or 0
+            self.usage.record_openai(usage)
             logger.debug("%s usage: %s", self.name, self.usage.summary())
 
     # -- Completions ---------------------------------------------------------

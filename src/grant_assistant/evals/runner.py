@@ -55,6 +55,9 @@ class EvalReport(BaseModel):
     #: harness useless as a regression detector.
     provider: str | None = Field(default=None, description="Provider name in AI mode.")
     model: str | None = Field(default=None, description="Model id in AI mode.")
+    #: What the run consumed. Recorded so a suite's cost is visible next to its
+    #: score rather than discovered on a bill.
+    usage: str | None = Field(default=None, description="Token usage for the run.")
     dataset: str = "built-in"
     results: list[CaseResult] = Field(default_factory=list)
 
@@ -102,6 +105,7 @@ class EvalReport(BaseModel):
             f"- Generated: {self.generated_at:%Y-%m-%d %H:%M}",
             f"- Mode: **{self.mode}**",
             f"- Backend: {self.backend}",
+            *([f"- Usage: {self.usage}"] if self.usage else []),
             f"- Dataset: {self.dataset}",
             f"- Result: **{self.passed}/{self.total} cases passed ({self.pass_rate}%)**",
             "",
@@ -254,6 +258,11 @@ def run_evals(
         # implementations, so read it defensively.
         provider=getattr(provider, "name", None),
         model=getattr(provider, "model", None),
+        usage=(
+            stats.session_summary()
+            if (stats := getattr(provider, "usage", None)) is not None
+            else None
+        ),
         results=results,
     )
     logger.info(

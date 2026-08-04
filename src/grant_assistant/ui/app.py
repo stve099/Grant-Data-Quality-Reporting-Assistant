@@ -793,6 +793,10 @@ def page_chat() -> None:
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": str(answer)})
 
+    usage = getattr(agent.provider, "usage", None)
+    if usage is not None and usage.calls:
+        st.caption(f"Session usage — {usage.session_summary()}")
+
 
 # ---------------------------------------------------------------------------
 # Page: Proactive Insights
