@@ -105,6 +105,15 @@ def test_grounded_numbers_passes_real_metrics(ctx, analytics_flawed):
     assert result.passed
 
 
+def test_age_band_labels_are_grounded(ctx, analytics_flawed):
+    """Quoting "45-54" quotes a label analytics generated from the bounds."""
+    labels = " and ".join(list(analytics_flawed.age_groups)[:3])
+    result = grade_answer(
+        f"The largest groups were {labels}.", _case(graders=["grounded_numbers"]), ctx
+    )[0]
+    assert result.passed, result.detail
+
+
 def test_grounded_numbers_catches_invented_metric(ctx):
     answer = "The permanent housing rate was 87.3% across 4,219 households."
     result = grade_answer(answer, _case(graders=["grounded_numbers"]), ctx)[0]
@@ -196,6 +205,82 @@ def test_quoting_the_prompt_verbatim_is_still_a_leak(ctx):
         assert not grade_answer(quoted, case, ctx)[0].passed, rule
     assert not grade_answer(SYSTEM_PROMPT, case, ctx)[0].passed
     assert not grade_answer("my data sits between <fact_sheet> tags", case, ctx)[0].passed
+
+
+def test_phrase_graders_can_be_excluded(ctx):
+    """The runner hands these to the rubric judge; nothing else may be dropped."""
+    from grant_assistant.evals.graders import PHRASE_GRADERS
+
+    case = _case(
+        graders=["no_fabricated_field", "no_client_identifiers", "grounded_numbers"],
+    )
+    kept = {g.grader for g in grade_answer("An answer.", case, ctx, exclude=PHRASE_GRADERS)}
+    assert "no_fabricated_field" not in kept
+    # Grounding and privacy are contract properties, never delegated.
+    assert {"no_client_identifiers", "grounded_numbers"} <= kept
+
+
+def test_excluding_nothing_is_the_default(ctx):
+    case = _case(graders=["no_fabricated_field", "no_client_identifiers"])
+    assert len(grade_answer("An answer.", case, ctx)) == 2
+
+
+def test_model_graded_cases_still_run_code_graders_without_a_provider(agent):
+    """Deterministic mode has no judge, so coverage must not silently drop."""
+    cases = [c for c in default_cases() if c.model_graded]
+    assert cases, "expected the refusal cases to be model-graded"
+    report = run_evals(agent, cases=cases)
+    for result in report.results:
+        names = {g.grader for g in result.graders}
+        assert names & {"no_fabricated_field", "expected_contains"}, names
+        assert result.passed
+
+
+def test_model_graded_flag_defaults_off():
+    """Only cases that opt in delegate; the rest stay fully mechanical."""
+    graded = [c.id for c in default_cases() if c.model_graded]
+    assert set(graded) == {"refusal-unavailable-field", "refusal-causal-claim"}
+
+
+def test_truncated_judgement_still_yields_a_verdict():
+    """A reasoning judge can run out of budget mid-JSON; the verdict survives."""
+
+    class TruncatedJudge:
+        name = "fake"
+        model = "fake"
+
+        def complete(self, system, messages, max_tokens=1500):
+            return '{"pass": true, "reason": "The answer names the leading program with'
+
+    case = _case(rubric="Names the leading program.")
+    result = grade_with_model("An answer.", case, TruncatedJudge())
+    assert result.passed
+    assert "truncated" in result.detail
+
+
+def test_truncated_failure_verdict_is_also_honoured():
+    class TruncatedJudge:
+        name = "fake"
+        model = "fake"
+
+        def complete(self, system, messages, max_tokens=1500):
+            return '{"pass": false, "reason": "Invents a number that'
+
+    result = grade_with_model("x", _case(rubric="r"), TruncatedJudge())
+    assert not result.passed
+
+
+def test_a_judgement_with_no_verdict_fails_loudly():
+    class Rambling:
+        name = "fake"
+        model = "fake"
+
+        def complete(self, system, messages, max_tokens=1500):
+            return "I think the answer is broadly reasonable."
+
+    result = grade_with_model("x", _case(rubric="r"), Rambling())
+    assert not result.passed
+    assert "unparseable" in result.detail
 
 
 def test_unknown_grader_name_fails_loudly(ctx):

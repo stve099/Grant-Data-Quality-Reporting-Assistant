@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, computed_field
 from grant_assistant.agents import DataAnalystAgent
 from grant_assistant.evals.dataset import EvalCase, default_cases
 from grant_assistant.evals.graders import (
+    PHRASE_GRADERS,
     GraderResult,
     GradingContext,
     grade_answer,
@@ -228,7 +229,11 @@ def run_evals(
                 answer="",
                 graders=[GraderResult(grader="execution", passed=False, detail=f"raised: {exc}")],
             )
-        graders = grade_answer(answer, case, ctx)
+        # A model-graded case hands its phrase graders to the rubric judge, but
+        # only when one is actually available. Without a provider the code
+        # graders still run, so the deterministic suite keeps full coverage.
+        delegate = judge is not None and case.model_graded
+        graders = grade_answer(answer, case, ctx, exclude=PHRASE_GRADERS if delegate else ())
         if judge is not None:
             graders.append(grade_with_model(answer, case, judge))
         return CaseResult(
