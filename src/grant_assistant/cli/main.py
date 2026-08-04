@@ -562,6 +562,83 @@ def rules() -> None:
         )
 
 
+@app.command()
+def batch(
+    directory: Annotated[Path, typer.Argument(help="Folder of extracts to audit.")],
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+    pattern: Annotated[str, typer.Option("--pattern", help="Glob, e.g. '2025-*.csv'.")] = "*",
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Rollup path (.csv or .xlsx).")
+    ] = Path("output/batch_summary.csv"),
+    record: Annotated[
+        Path | None, typer.Option("--record", help="Also add each file to this history db.")
+    ] = None,
+) -> None:
+    """Audit every extract in a folder and roll the results up."""
+    from grant_assistant.batch import (
+        batch_summary_lines,
+        discover_datasets,
+        run_batch,
+        write_batch_summary,
+    )
+
+    try:
+        files = discover_datasets(directory, pattern)
+    except NotADirectoryError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+    if not files:
+        typer.secho(f"No data files matching '{pattern}' in {directory}.", fg=typer.colors.YELLOW)
+        raise typer.Exit(code=1)
+
+    _echo_header(f"Batch audit — {len(files)} file(s)")
+    result = run_batch(files, profile, config_dir)
+
+    for entry in result.entries:
+        if entry.ok:
+            color = typer.colors.GREEN if entry.blocking == 0 else typer.colors.YELLOW
+            typer.secho(
+                f"  {entry.path.name:<44} {entry.rows:>6} rows  {entry.score:>5.1f} "
+                f"({entry.grade})  {entry.blocking} blocking",
+                fg=color,
+            )
+        else:
+            typer.secho(f"  {entry.path.name:<44} FAILED — {entry.error}", fg=typer.colors.RED)
+
+    _echo_header("Rollup")
+    for line in batch_summary_lines(result):
+        typer.echo(f"  {line}")
+
+    path = write_batch_summary(result, output)
+    typer.secho(f"\nSummary: {path}", fg=typer.colors.GREEN)
+
+    if record is not None:
+        from grant_assistant.history import record_run
+
+        recorded = 0
+        for entry in result.succeeded:
+            try:
+                run = _run(entry.path, profile, config_dir)
+                record_run(
+                    run.profile,
+                    run.audit,
+                    run.analytics,
+                    record,
+                    label=entry.path.stem[:40],
+                    source=str(entry.path),
+                )
+                recorded += 1
+            except Exception as exc:  # pragma: no cover - defensive
+                typer.secho(
+                    f"  ! could not record {entry.path.name}: {exc}", fg=typer.colors.YELLOW
+                )
+        typer.secho(f"Recorded {recorded} run(s) to {record}", fg=typer.colors.GREEN)
+
+    if result.failed:
+        raise typer.Exit(code=1)
+
+
 @app.command("record-run")
 def record_run_command(
     data_file: Annotated[Path, typer.Argument(help="Dataset to audit and record.")],
