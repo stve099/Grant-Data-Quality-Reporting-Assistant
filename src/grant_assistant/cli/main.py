@@ -562,6 +562,35 @@ def rules() -> None:
         )
 
 
+@app.command("data-dictionary")
+def data_dictionary(
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Output path (.md or .html).")
+    ] = Path("output/data_dictionary.md"),
+) -> None:
+    """Generate the file specification for whoever produces the extract."""
+    from grant_assistant.configuration import ProfileValidationError
+    from grant_assistant.reporting import write_data_dictionary
+    from grant_assistant.workflow import resolve_profile
+
+    try:
+        loaded = resolve_profile(profile, config_dir)
+    except ProfileValidationError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from exc
+
+    path = write_data_dictionary(loaded, output)
+    _echo_header("Data dictionary")
+    typer.echo(f"  {loaded.grant_name} ({loaded.profile_id})")
+    typer.echo(
+        f"  {len(loaded.field_mappings)} column(s), {len(loaded.programs)} program(s), "
+        f"{len(loaded.performance_measures)} measure(s)"
+    )
+    typer.secho(f"\nWritten: {path}", fg=typer.colors.GREEN)
+
+
 @app.command("correction-worksheet")
 def correction_worksheet(
     data_file: Annotated[Path, typer.Argument(help="Dataset to build corrections for.")],
