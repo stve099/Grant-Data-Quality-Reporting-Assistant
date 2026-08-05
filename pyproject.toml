@@ -98,6 +98,11 @@ files = ["src/grant_assistant"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    # Scale tests build a 20k-row dataset; deselect with -m "not slow" when
+    # iterating, but they run by default so a complexity regression is caught.
+    "slow: takes several seconds (scale and volume tests)",
+]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
