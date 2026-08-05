@@ -95,6 +95,19 @@ uv run grant-assistant report sample_data/housing_program_flawed.csv --template 
 
 # Grade the analyst against the prompt-evaluation dataset
 uv run grant-assistant eval
+uv run grant-assistant eval --runs 3        # a hosted model is not reproducible
+
+# Fix the data: export what is wrong, take the corrections back, re-audit
+uv run grant-assistant correction-worksheet sample_data/housing_program_flawed.csv
+uv run grant-assistant apply-corrections sample_data/housing_program_flawed.csv output/corrections.xlsx
+
+# Many files at once, and quality over time
+uv run grant-assistant batch ./extracts --pattern "2025-*.csv"
+uv run grant-assistant record-run sample_data/housing_program_flawed.csv --label "Q1"
+uv run grant-assistant history --metric permanent_housing_rate
+
+# The file specification to send to whoever produces the extract
+uv run grant-assistant data-dictionary --output docs/spec.html
 
 # Utilities
 uv run grant-assistant generate-sample-data
@@ -381,8 +394,8 @@ Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISH
 ## Roadmap
 
 - PowerPoint executive summary export
-- Chart images inside the Word report
 - Scheduled audits with email summaries
+- Funder submission-format validation (HMIS CSV and similar)
 
 ---
 
