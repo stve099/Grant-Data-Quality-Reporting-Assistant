@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from pathlib import Path
 
 import pytest
 
@@ -63,6 +64,99 @@ def test_mcp_server_tools_registered():
     tools = anyio.run(mcp.list_tools)
     names = {t.name for t in tools}
     assert {"audit_dataset", "analyze_dataset", "generate_report", "ask_analyst"} <= names
+    # Everything the CLI can do should be reachable by an MCP client too.
+    assert {
+        "check_for_personal_information",
+        "export_correction_worksheet",
+        "apply_corrections",
+        "batch_audit",
+        "data_quality_history",
+        "get_data_dictionary",
+    } <= names
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_mcp_tools_describe_themselves():
+    """A tool with no description is unusable by a model choosing between them."""
+    import anyio
+
+    from grant_assistant.mcp_server import mcp
+
+    for tool in anyio.run(mcp.list_tools):
+        assert tool.description and tool.description.strip(), tool.name
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_pii_check_tool_reports_cleanly(tmp_path, clean_df):
+    from grant_assistant import mcp_server
+
+    path = tmp_path / "clean.csv"
+    clean_df.to_csv(path, index=False)
+    result = mcp_server.check_for_personal_information(str(path))
+    assert result["looks_clean"] is True
+    assert result["warnings"] == []
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_pii_check_tool_flags_identifiers(tmp_path, clean_df):
+    from grant_assistant import mcp_server
+
+    frame = clean_df.copy()
+    frame["Client Name"] = "Jane Doe"
+    path = tmp_path / "identified.csv"
+    frame.to_csv(path, index=False)
+
+    result = mcp_server.check_for_personal_information(str(path))
+    assert result["looks_clean"] is False
+    assert any("Client Name" in w for w in result["warnings"])
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_correction_worksheet_tool_round_trips(tmp_path, flawed):
+    from grant_assistant import mcp_server
+
+    source = tmp_path / "flawed.csv"
+    flawed[0].to_csv(source, index=False)
+    exported = mcp_server.export_correction_worksheet(
+        str(source), output_path=str(tmp_path / "corrections.xlsx")
+    )
+    assert exported["records"] > 0
+    assert Path(exported["path"]).exists()
+
+    # Nothing filled in, so applying is a no-op rather than an error.
+    applied = mcp_server.apply_corrections(
+        str(source), exported["path"], output_path=str(tmp_path / "out.csv")
+    )
+    assert applied["applied"] == 0
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_batch_tool_reports_failures(tmp_path, clean_df):
+    from grant_assistant import mcp_server
+
+    clean_df.to_csv(tmp_path / "good.csv", index=False)
+    (tmp_path / "bad.csv").write_text("nonsense\n1\n", encoding="utf-8")
+
+    result = mcp_server.batch_audit(str(tmp_path))
+    assert result["files_audited"] == 1
+    assert result["files_failed"] == 1
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_history_tool_is_honest_when_empty(tmp_path):
+    from grant_assistant import mcp_server
+
+    result = mcp_server.data_quality_history(str(tmp_path / "none.db"))
+    assert result["runs"] == 0
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_data_dictionary_tool_returns_markdown():
+    from grant_assistant import mcp_server
+
+    text = mcp_server.get_data_dictionary()
+    assert text.startswith("# ")
+    assert "Validation rules" in text
 
 
 @pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")

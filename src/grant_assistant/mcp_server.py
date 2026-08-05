@@ -127,6 +127,171 @@ def ask_analyst(data_file: str, question: str, profile: str = "housing_stability
 # ---------------------------------------------------------------------------
 
 
+@mcp.tool()
+def check_for_personal_information(
+    data_file: str, profile: str = "housing_stability"
+) -> dict[str, Any]:
+    """Check whether an extract appears to contain direct identifiers.
+
+    Worth running before anything else: this pipeline expects pseudonymous data,
+    and a name or SSN column would otherwise reach a generated report.
+    """
+    result = run_pipeline(data_file, profile)
+    warnings = result.audit.pii_warnings
+    return {
+        "looks_clean": not warnings,
+        "warnings": warnings,
+        "advice": (
+            "No direct identifiers detected."
+            if not warnings
+            else "Remove or pseudonymize these columns before using this extract."
+        ),
+    }
+
+
+@mcp.tool()
+def export_correction_worksheet(
+    data_file: str,
+    profile: str = "housing_stability",
+    output_path: str = "output/corrections.xlsx",
+) -> dict[str, Any]:
+    """Export every flagged record to a worksheet staff can fill in and return.
+
+    Fill the 'Corrected Value' column, then use apply_corrections.
+    """
+    from grant_assistant.corrections import build_worksheet, write_worksheet
+
+    result = run_pipeline(data_file, profile)
+    frame = build_worksheet(result.audit)
+    if frame.empty:
+        return {"records": 0, "path": None, "note": "No row-level findings to correct."}
+    path = write_worksheet(result.audit, output_path)
+    return {
+        "records": len(frame),
+        "rules": int(frame["Rule"].nunique()),
+        "blocking_records": int((frame["Blocking"] == "Yes").sum()),
+        "path": str(path),
+    }
+
+
+@mcp.tool()
+def apply_corrections(
+    data_file: str,
+    worksheet: str,
+    profile: str = "housing_stability",
+    output_path: str = "output/corrected.csv",
+) -> dict[str, Any]:
+    """Apply a filled-in worksheet and report what the audit looks like afterwards.
+
+    The original file is never modified. Edits whose client ID does not match the
+    recorded row are refused rather than written to whatever row now sits there.
+    """
+    from grant_assistant.audit import run_audit
+    from grant_assistant.corrections import apply_corrections as _apply
+    from grant_assistant.corrections import read_worksheet
+    from grant_assistant.ingestion import load_dataset, prepare_dataset
+
+    before = run_pipeline(data_file, profile)
+    corrections = read_worksheet(worksheet)
+    if not corrections:
+        return {"applied": 0, "note": "The 'Corrected Value' column is empty."}
+
+    source = load_dataset(data_file)
+    corrected, report = _apply(source, corrections, before.prepared)
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.suffix.lower() in {".xlsx", ".xls"}:
+        corrected.to_excel(out, index=False)
+    else:
+        corrected.to_csv(out, index=False)
+
+    after = run_audit(prepare_dataset(corrected, before.profile), before.profile)
+    return {
+        "applied": report.applied,
+        "skipped": report.skipped,
+        "score_before": before.audit.overall_score,
+        "score_after": after.overall_score,
+        "blocking_before": len(before.audit.blocking_issues),
+        "blocking_after": len(after.blocking_issues),
+        "path": str(out),
+    }
+
+
+@mcp.tool()
+def batch_audit(
+    directory: str, profile: str = "housing_stability", pattern: str = "*"
+) -> dict[str, Any]:
+    """Audit every extract in a folder and roll the results up.
+
+    Files that cannot be processed are reported rather than silently dropped.
+    """
+    from grant_assistant.batch import discover_datasets, run_batch
+
+    files = discover_datasets(directory, pattern)
+    result = run_batch(files, profile)
+    return {
+        "files_audited": len(result.succeeded),
+        "files_failed": len(result.failed),
+        "total_rows": result.total_rows,
+        "total_findings": result.total_findings,
+        "total_blocking": result.total_blocking,
+        "weighted_score": result.weighted_score,
+        "worst_file": result.worst.path.name if result.worst else None,
+        "per_file": [
+            {
+                "file": e.path.name,
+                "ok": e.ok,
+                "rows": e.rows,
+                "score": e.score if e.ok else None,
+                "blocking": e.blocking,
+                "error": e.error,
+            }
+            for e in result.entries
+        ],
+    }
+
+
+@mcp.tool()
+def data_quality_history(
+    db_path: str = "output/history.db", profile: str | None = None
+) -> dict[str, Any]:
+    """Show recorded runs over time and whether data quality is improving."""
+    from grant_assistant.history import load_history, score_trend
+
+    entries = load_history(db_path, profile)
+    if not entries:
+        return {"runs": 0, "note": f"No history recorded in {db_path} yet."}
+    return {
+        "runs": len(entries),
+        "trend": score_trend(entries),
+        "history": [
+            {
+                "recorded_at": e.recorded_at.isoformat(timespec="seconds"),
+                "label": e.label,
+                "rows": e.total_rows,
+                "score": e.score,
+                "grade": e.grade,
+                "findings": e.findings,
+                "blocking": e.blocking,
+            }
+            for e in entries
+        ],
+    }
+
+
+@mcp.tool()
+def get_data_dictionary(profile: str = "housing_stability") -> str:
+    """The file specification for this grant: columns, values, rules, measures.
+
+    Returned as Markdown, generated from the profile so it cannot drift from
+    what the audit actually enforces.
+    """
+    from grant_assistant.reporting import build_data_dictionary
+    from grant_assistant.workflow import resolve_profile
+
+    return build_data_dictionary(resolve_profile(profile))
+
+
 @mcp.resource("grant://profiles")
 def list_profiles_resource() -> str:
     """Every grant profile available on this server, with its key settings."""
