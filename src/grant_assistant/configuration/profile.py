@@ -154,6 +154,20 @@ class GrantProfile(BaseModel):
     severity_overrides: dict[str, Severity] = Field(
         default_factory=dict, description="Per-rule severity overrides keyed by rule ID."
     )
+    disabled_rules: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Rule IDs this grant does not apply, e.g. a funder that does not collect "
+            "income. A disabled rule produces no findings and does not affect the score."
+        ),
+    )
+    rule_thresholds: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Tuning for rules with a sensitivity knob, keyed by threshold name "
+            "(see RuleContext.threshold). Unset names keep the built-in default."
+        ),
+    )
     blocking_rules: list[str] = Field(
         default_factory=list, description="Rule IDs that block report submission."
     )

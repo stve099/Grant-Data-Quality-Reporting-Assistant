@@ -886,13 +886,13 @@ def income_outliers(ctx: RuleContext) -> list[AuditIssue]:
     df = ctx.data.df
     vals = df[schema.ENTRY_INCOME]
     valid = vals[(vals.notna()) & (vals >= 0) & (vals <= ctx.profile.income_cap)]
-    if len(valid) < 20:
+    if len(valid) < ctx.threshold("income_outlier_min_sample", 20):
         return []
     q1, q3 = valid.quantile(0.25), valid.quantile(0.75)
     iqr = q3 - q1
     if iqr <= 0:
         return []
-    upper = q3 + 3 * iqr
+    upper = q3 + ctx.threshold("income_outlier_iqr_multiplier", 3.0) * iqr
     mask = vals.notna() & (vals <= ctx.profile.income_cap) & (vals > upper)
     records = _records(ctx, mask, field=schema.ENTRY_INCOME, value_col=schema.ENTRY_INCOME)
     if not records:
@@ -926,12 +926,13 @@ def enrollment_volume_anomaly(ctx: RuleContext) -> list[AuditIssue]:
     if dates.empty:
         return []
     monthly = dates.dt.to_period("M").value_counts().sort_index()
-    if len(monthly) < 6:
+    if len(monthly) < ctx.threshold("anomaly_min_months", 6):
         return []
     mean, std = float(monthly.mean()), float(monthly.std())
     if std == 0:
         return []
-    anomalous = [p for p, c in monthly.items() if abs((c - mean) / std) > 2]
+    z_limit = ctx.threshold("enrollment_anomaly_zscore", 2.0)
+    anomalous = [p for p, c in monthly.items() if abs((c - mean) / std) > z_limit]
     if not anomalous:
         return []
     mask = df[schema.ENROLLMENT_DATE].dt.to_period("M").isin(anomalous)
@@ -969,12 +970,13 @@ def program_trend_anomaly(ctx: RuleContext) -> list[AuditIssue]:
         if sub.empty:
             continue
         monthly = sub[schema.ENROLLMENT_DATE].dt.to_period("M").value_counts().sort_index()
-        if len(monthly) < 6:
+        if len(monthly) < ctx.threshold("anomaly_min_months", 6):
             continue
         mean, std = float(monthly.mean()), float(monthly.std())
         if std == 0:
             continue
-        anomalous = [p for p, c in monthly.items() if abs((c - mean) / std) > 2.5]
+        z_limit = ctx.threshold("program_anomaly_zscore", 2.5)
+        anomalous = [p for p, c in monthly.items() if abs((c - mean) / std) > z_limit]
         if not anomalous:
             continue
         details.append(f"{program}: {', '.join(str(p) for p in anomalous)}")

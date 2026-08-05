@@ -55,6 +55,15 @@ def test_every_audit_rule_appears(dictionary):
         assert meta.rule_id in dictionary, meta.rule_id
 
 
+def test_disabled_rules_are_not_presented_as_enforced(profile):
+    """Listing a rule that will never run tells the producer to satisfy nothing."""
+    tuned = profile.model_copy(update={"disabled_rules": ["DQ-002"]})
+    text = build_data_dictionary(tuned)
+    rule_lines = [line for line in text.splitlines() if line.startswith("| DQ-002 ")]
+    assert not rule_lines
+    assert "Not applied to this grant: DQ-002" in text
+
+
 def test_blocking_rules_are_marked(dictionary, profile):
     assert "Blocking" in dictionary
     for rule_id in profile.blocking_rules:

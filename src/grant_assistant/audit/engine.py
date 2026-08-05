@@ -31,6 +31,14 @@ class RuleContext:
     profile: GrantProfile
     today: date = field(default_factory=date.today)
 
+    def threshold(self, name: str, default: float) -> float:
+        """A tunable knob, taken from the profile when it sets one.
+
+        Rules keep their default inline so the built-in behaviour stays readable
+        and a profile that names nothing behaves exactly as before.
+        """
+        return self.profile.rule_thresholds.get(name, default)
+
 
 @dataclass(frozen=True)
 class RuleMeta:
@@ -86,6 +94,7 @@ def run_audit(
     _ensure_rules_loaded()
     ctx = RuleContext(data=data, profile=profile, today=today or date.today())
     issues: list[AuditIssue] = []
+    disabled = set(profile.disabled_rules)
     for meta, func in _REGISTRY:
         try:
             produced = func(ctx)
@@ -93,6 +102,12 @@ def run_audit(
             logger.exception("Audit rule %s (%s) failed; skipping", meta.rule_id, meta.name)
             continue
         for issue in produced:
+            # Filtered per issue rather than per registered rule: one rule emits
+            # several IDs (the follow-up sub-rules), so skipping by the
+            # registration id would disable siblings the profile never named.
+            if issue.rule_id in disabled:
+                logger.debug("Rule %s disabled by profile %s", issue.rule_id, profile.profile_id)
+                continue
             issue.severity = profile.severity_for(issue.rule_id, issue.severity)
             issue.blocking = profile.is_blocking(issue.rule_id, issue.blocking)
             issues.append(issue)

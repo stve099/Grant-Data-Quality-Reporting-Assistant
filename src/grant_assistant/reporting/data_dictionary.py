@@ -139,11 +139,12 @@ def build_data_dictionary(profile: GrantProfile) -> str:
     )
 
     blocking = set(p.blocking_rules)
+    disabled = set(p.disabled_rules)
     lines += [
         "## Validation rules",
         "",
-        "Every rule the audit applies. A **blocking** finding must be resolved before",
-        "the report is submitted.",
+        "Every rule the audit applies to this grant. A **blocking** finding must be",
+        "resolved before the report is submitted.",
         "",
     ]
     lines += _table(
@@ -155,9 +156,17 @@ def build_data_dictionary(profile: GrantProfile) -> str:
                 p.severity_overrides.get(meta.rule_id, meta.severity).label,
                 "Yes" if (meta.rule_id in blocking or meta.blocking) else "",
             ]
+            # A rule this profile disables is not applied, so listing it would
+            # tell the producer to satisfy a check that will never run.
             for meta in list_rules()
+            if meta.rule_id not in disabled
         ],
     )
+    if disabled:
+        lines += [
+            f"_Not applied to this grant: {', '.join(sorted(disabled))}._",
+            "",
+        ]
 
     lines += [
         "## Value limits",
