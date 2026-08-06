@@ -678,6 +678,17 @@ def record_run_command(
         delta = result.audit.overall_score - previous[-1].score
         color = typer.colors.GREEN if delta >= 0 else typer.colors.YELLOW
         typer.secho(f"  {delta:+.1f} versus the previous run", fg=color)
+
+        from grant_assistant.history import resolved_since_last_run, rule_ages
+
+        resolved = resolved_since_last_run(previous, result.audit)
+        if resolved:
+            typer.secho(f"  Resolved since last run: {', '.join(resolved)}", fg=typer.colors.GREEN)
+        persistent = [a for a in rule_ages(previous, result.audit) if a.is_persistent]
+        if persistent:
+            _echo_header("Long-standing issues")
+            for age in persistent:
+                typer.secho(f"  {age.describe()}", fg=typer.colors.YELLOW)
     typer.secho(f"\nHistory: {db}", fg=typer.colors.GREEN)
 
 
@@ -730,6 +741,105 @@ def history(
             _echo_header(metric)
             for when, value in series:
                 typer.echo(f"  {when:%Y-%m-%d}  {value:>12,.1f}")
+
+
+@app.command("draft-profile")
+def draft_profile_command(
+    data_file: Annotated[Path, typer.Argument(help="Sample extract from the new funder.")],
+    profile_id: Annotated[
+        str, typer.Option("--id", help="Profile id, e.g. 'county_esg'.")
+    ] = "new_grant",
+    grant_name: Annotated[str, typer.Option("--name", help="Grant name.")] = "New Grant",
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the draft YAML.")
+    ] = Path("configs/draft_profile.yaml"),
+) -> None:
+    """Draft a grant profile from a sample extract, for a human to finish."""
+    from grant_assistant.configuration.generator import draft_profile, draft_to_yaml
+    from grant_assistant.ingestion import load_dataset
+
+    frame = load_dataset(data_file)
+    draft = draft_profile(frame, profile_id=profile_id, grant_name=grant_name)
+
+    _echo_header("Profile draft")
+    typer.secho(f"  {len(draft.confident)} column(s) mapped confidently", fg=typer.colors.GREEN)
+    for guess in draft.uncertain:
+        typer.secho(
+            f"  ? {guess.source_header} -> {guess.canonical} ({guess.reason})",
+            fg=typer.colors.YELLOW,
+        )
+    for canonical in draft.missing_required:
+        typer.secho(f"  ! no column found for required field '{canonical}'", fg=typer.colors.RED)
+    if draft.unmapped_headers:
+        typer.echo(f"  {len(draft.unmapped_headers)} column(s) unmapped and ignored")
+    if draft.programs:
+        typer.echo(f"  {len(draft.programs)} program(s) found: {', '.join(draft.programs[:4])}")
+    if draft.period_start:
+        typer.echo(f"  Dates span {draft.period_start} to {draft.period_end}")
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(draft_to_yaml(draft), encoding="utf-8")
+    typer.secho(f"\nDraft: {output}", fg=typer.colors.GREEN)
+    typer.echo("Review every mapping, add the performance measures, then run:")
+    typer.echo(f"  grant-assistant validate-config --path {output}")
+
+
+@app.command("compare-models")
+def compare_models_command(
+    models: Annotated[str, typer.Argument(help="Comma-separated model ids to compare.")],
+    data_file: Annotated[
+        Path, typer.Argument(help="Dataset the models are evaluated against.")
+    ] = Path("sample_data/housing_program_flawed.csv"),
+    profile: ProfileOpt = "housing_stability",
+    config_dir: ConfigDirOpt = None,
+    runs: Annotated[
+        int, typer.Option("--runs", min=1, help="Runs per model; a mean beats one sample.")
+    ] = 1,
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the comparison table.")
+    ] = Path("output/model_comparison.md"),
+) -> None:
+    """Evaluate several models on the same dataset and rank them."""
+    from grant_assistant import schema
+    from grant_assistant.agents import DataAnalystAgent
+    from grant_assistant.agents.provider import get_provider
+    from grant_assistant.evals.comparison import compare_models
+
+    names = [m.strip() for m in models.split(",") if m.strip()]
+    if not names:
+        typer.secho("Give at least one model id.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    result = _run(data_file, profile, config_dir)
+    client_ids = {str(v) for v in result.prepared.raw[schema.CLIENT_ID].dropna().unique() if str(v)}
+
+    def agent_factory(model: str) -> DataAnalystAgent:
+        provider = get_provider(model=model)
+        if provider is None:
+            raise RuntimeError("No AI provider configured — set a key first.")
+        return DataAnalystAgent(result.analytics, result.audit, result.profile, provider=provider)
+
+    _echo_header(f"Comparing {len(names)} model(s), {runs} run(s) each")
+    comparison = compare_models(names, agent_factory, client_ids=client_ids, runs=runs)
+
+    for entry in comparison.ranked:
+        color = typer.colors.GREEN if entry.mean_pass_rate >= 100 else typer.colors.YELLOW
+        typer.secho(
+            f"  {entry.model:<38} {entry.mean_pass_rate:>6.1f}%  "
+            f"(worst {entry.min_pass_rate:.1f}%)  {entry.total_tokens:>9,} tokens",
+            fg=color,
+        )
+    for entry in comparison.results:
+        if not entry.ok:
+            typer.secho(f"  {entry.model:<38} failed — {entry.error}", fg=typer.colors.RED)
+
+    winner = comparison.winner
+    if winner is not None:
+        typer.secho(f"\n  Best: {winner.model} ({winner.mean_pass_rate}%)", bold=True)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(comparison.as_markdown(), encoding="utf-8")
+    typer.secho(f"\nComparison: {output}", fg=typer.colors.GREEN)
 
 
 @app.command("data-dictionary")

@@ -39,7 +39,11 @@ CREATE TABLE IF NOT EXISTS runs (
     score         REAL    NOT NULL,
     grade         TEXT    NOT NULL,
     findings      INTEGER NOT NULL,
-    blocking      INTEGER NOT NULL
+    blocking      INTEGER NOT NULL,
+    -- 1 once per-rule counts are stored. Distinguishes a clean run (counts
+    -- recorded, none present) from a run recorded before aging existed
+    -- (nothing recorded). Both have an empty rule_counts mapping otherwise.
+    rules_recorded INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS run_metrics (
@@ -47,6 +51,13 @@ CREATE TABLE IF NOT EXISTS run_metrics (
     name   TEXT    NOT NULL,
     value  REAL,
     PRIMARY KEY (run_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS run_rule_counts (
+    run_id  INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    rule_id TEXT    NOT NULL,
+    count   INTEGER NOT NULL,
+    PRIMARY KEY (run_id, rule_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_runs_profile ON runs(profile_id, recorded_at);
@@ -71,6 +82,19 @@ class HistoryEntry:
     findings: int
     blocking: int
     metrics: dict[str, float | None] = field(default_factory=dict)
+    #: rule id -> record count, for rules that fired. Empty both for a clean run
+    #: and for one recorded before aging existed, so never read it alone.
+    rule_counts: dict[str, int] = field(default_factory=dict)
+    #: Whether per-rule counts were recorded at all. False means "unknown", not
+    #: "clean" — aging must not report a resolution that never happened.
+    rules_recorded: bool = False
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after a database may already have been created."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+    if "rules_recorded" not in existing:
+        conn.execute("ALTER TABLE runs ADD COLUMN rules_recorded INTEGER NOT NULL DEFAULT 0")
 
 
 @contextmanager
@@ -81,6 +105,7 @@ def _connect(db_path: str | Path) -> Iterator[sqlite3.Connection]:
     try:
         conn.row_factory = sqlite3.Row
         conn.executescript(_SCHEMA)
+        _migrate(conn)
         yield conn
         conn.commit()
     finally:
@@ -105,8 +130,8 @@ def record_run(
     with _connect(db_path) as conn:
         cursor = conn.execute(
             "INSERT INTO runs (recorded_at, profile_id, grant_name, label, source, "
-            "period_start, period_end, total_rows, score, grade, findings, blocking) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "period_start, period_end, total_rows, score, grade, findings, blocking, "
+            "rules_recorded) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)",
             (
                 stamp,
                 profile.profile_id,
@@ -128,6 +153,14 @@ def record_run(
             [
                 (run_id, name, None if value is None else float(value))
                 for name, value in analytics.metric_lookup().items()
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO run_rule_counts (run_id, rule_id, count) VALUES (?,?,?)",
+            [
+                (run_id, issue.rule_id, issue.record_count)
+                for issue in audit.issues
+                if issue.record_count
             ],
         )
     return run_id
@@ -160,6 +193,12 @@ def load_history(
                     "SELECT name, value FROM run_metrics WHERE run_id = ?", (row["id"],)
                 )
             }
+            rule_counts = {
+                r["rule_id"]: r["count"]
+                for r in conn.execute(
+                    "SELECT rule_id, count FROM run_rule_counts WHERE run_id = ?", (row["id"],)
+                )
+            }
             entries.append(
                 HistoryEntry(
                     run_id=row["id"],
@@ -176,6 +215,8 @@ def load_history(
                     findings=row["findings"],
                     blocking=row["blocking"],
                     metrics=metrics,
+                    rule_counts=rule_counts,
+                    rules_recorded=bool(row["rules_recorded"]),
                 )
             )
     return entries
