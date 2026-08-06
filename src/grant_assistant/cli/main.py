@@ -803,7 +803,7 @@ def compare_models_command(
     from grant_assistant import schema
     from grant_assistant.agents import DataAnalystAgent
     from grant_assistant.agents.provider import get_provider
-    from grant_assistant.evals.comparison import compare_models
+    from grant_assistant.evals.model_comparison import compare_models
 
     names = [m.strip() for m in models.split(",") if m.strip()]
     if not names:

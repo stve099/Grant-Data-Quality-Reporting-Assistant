@@ -8,8 +8,8 @@ one, and an unreachable model must not silently vanish from the table.
 from __future__ import annotations
 
 from grant_assistant.agents import DataAnalystAgent
-from grant_assistant.evals.comparison import ComparisonResult, ModelResult, compare_models
 from grant_assistant.evals.dataset import default_cases
+from grant_assistant.evals.model_comparison import ComparisonResult, ModelResult, compare_models
 
 
 class _Provider:

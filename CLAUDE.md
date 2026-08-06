@@ -38,21 +38,28 @@ commands with `UV_LINK_MODE=copy` (PowerShell: `$env:UV_LINK_MODE='copy'`) if yo
 ## Architecture
 
 ```
-configuration/  pydantic profile models + YAML loader (the funder's rules)
+configuration/  pydantic profile models + YAML loader (the funder's rules), plus a
+                generator that drafts a profile from a sample extract
 ingestion/      file loading, header mapping, type coercion; keeps a raw copy
 audit/          rule registry (@rule decorator), 27 rules, scoring model
-analytics/      deterministic metrics, comparison, plotly charts
+analytics/      deterministic metrics, period comparison, plotly charts
 agents/         provider abstraction, fact sheet, tools, workflows, insights, analyst
-evals/          prompt-eval dataset, graders, runner
-security/       prompt-injection scrubbing for untrusted uploads
-reporting/      HTML (Jinja2), Word, PDF, Excel exports
+evals/          prompt-eval dataset, graders, runner, model_comparison
+security/       prompt-injection scrubbing and PII pre-flight for untrusted uploads
+corrections/    export flagged records, take fixes back, apply them to a copy
+history/        SQLite run history + issue aging across reporting periods
+reporting/      HTML (Jinja2), Word, PDF, PowerPoint, Excel, data dictionary
 datagen/        synthetic clean + flawed sample generator with issue manifest
+batch.py        audit a folder of extracts and roll the results up
+env.py          .env loading shared by both entry points, with a test opt-out
 cli/ ui/        Typer CLI and Streamlit app (presentation only)
 ```
 
 `ingestion.prepare_dataset` returns both `df` (coerced) and `raw` (original strings) with
 the same index. Audit rules compare the two to tell *missing* from *present but invalid* —
-do not drop `raw`.
+do not drop `raw`. It also carries `pii_warnings`, scanned against the *source* frame
+before header mapping drops unmapped columns — a stray name column is unmapped by
+definition, so scanning later would never see it.
 
 ## Conventions
 
@@ -75,8 +82,31 @@ manifest (the manifest test then enforces detection permanently).
 **A grant profile** — use the `/new-grant-profile` skill. Validate with
 `uv run grant-assistant validate-config`.
 
-**A metric** — compute it in `analytics/metrics.py`, add it to `metric_lookup()`, expose
-it through `agents/tools.py` if the analyst should reach it, and test the expected value.
+**A metric** — use the `/add-metric` skill. Compute it in `analytics/metrics.py`, add it to
+`metric_lookup()`, expose it through `agents/tools.py` if the analyst should reach it, and
+test the expected value. `metric_lookup()` feeds the fact sheet, the agent tools, and the
+history store at once, so one addition reaches all three.
+
+**A report renderer** — take `ReportData` and nothing else. HTML, Word, PDF and PowerPoint
+are four renderers over one source, which is the only reason a figure cannot differ
+between them; do not recompute anything in a renderer. Charts go through
+`reporting/chart_images.figure_png`, which returns `None` when the optional backend is
+absent — an export missing its charts is still a correct export, so degrade rather than
+raise. Export it from `reporting/__init__.py` and wire it into `report --format`.
+
+**A CLI command** — add it to `cli/main.py`, then add a smoke test to `tests/test_cli.py`.
+The logic belongs in a module and is tested there; the CLI test exists to catch wiring,
+which is where these actually break (a stripped import, a missing symbol).
+
+**Something backed by history** — write through `history/store.record_run` and read with
+`load_history`. Both metrics and rule counts are stored long, one row per key per run, so
+a profile that gains a measure needs no migration. If you add a column to `runs`, extend
+`_migrate()`: databases created by earlier versions are expected to keep working, and
+there is a test that builds an old schema by hand to prove it.
+
+**An MCP tool** — mirror an existing one in `mcp_server.py`, return aggregated shapes only,
+and give it a real description; a tool without one is unusable by a model choosing between
+ten. Add its name to the registration test.
 
 ## Verification before you call something done
 
@@ -101,3 +131,16 @@ Do not claim a feature works without running it.
   SVGs once at load; changing the viewport width will cut charts off the page.
 - Follow-up math lives in `followups.py` and is shared by audit rules and analytics so the
   two can never disagree. Change it in one place.
+- Tests must not read a developer's `.env`. Both entry points load it through
+  `env.load_environment()`, and the autouse fixture in `conftest.py` sets its opt-out. The
+  Streamlit app's loader runs at import, so patching it by name could never work.
+- One registered audit rule can emit several rule IDs (the follow-up sub-rules), so
+  anything that filters by rule — `disabled_rules`, aging — must filter per *issue*, not
+  per registration, or it will silently take siblings with it.
+- Empty Excel cells read back as `NaN`, whose `str()` is the non-empty `"nan"`. Read
+  worksheets with `keep_default_na=False` or an untouched sheet looks full of edits.
+- Optional extras (`pdf`, `charts`, `pptx`, `mcp`, `openai`) must degrade, not crash. The
+  test suite runs with and without them.
+- This repo lives in OneDrive: a version bump can leave a locked `*.dist-info` behind and
+  break the editable install. Delete the stale directory and re-sync if uv reports an
+  access denial.

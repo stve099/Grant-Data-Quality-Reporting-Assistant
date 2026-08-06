@@ -22,6 +22,7 @@ from typing import Any
 
 from grant_assistant.reporting.chart_images import figure_png
 from grant_assistant.reporting.context import ReportData
+from grant_assistant.reporting.formatting import format_value as _fmt
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +50,6 @@ def _require_pptx() -> Any:
             "PowerPoint export requires the optional extra: uv sync --extra pptx"
         ) from exc
     return pptx
-
-
-def _fmt(value: float | int | None, unit: str = "") -> str:
-    if value is None:
-        return "n/a"
-    if unit == "percent":
-        return f"{value}%"
-    if unit == "currency":
-        return f"${value:,.0f}"
-    if isinstance(value, float):
-        return f"{value:,.1f}"
-    return f"{value:,}"
 
 
 def write_pptx_report(report: ReportData, path: str | Path) -> Path:

@@ -112,4 +112,7 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["src/grant_assistant"]
-omit = ["src/grant_assistant/ui/*"]
+# The UI is measured, not excluded. Streamlit's AppTest executes the page script
+# in-process, so coverage sees it — excluding it hid the fact that features added
+# to the largest file in the repo were verified by nothing.
+omit = []

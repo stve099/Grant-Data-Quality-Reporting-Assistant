@@ -13,22 +13,13 @@ from docx.shared import Inches, Pt, RGBColor
 
 from grant_assistant.reporting.chart_images import CHART_WIDTH_INCHES, figure_png
 from grant_assistant.reporting.context import ReportData
+from grant_assistant.reporting.formatting import format_value as _fmt
 
 logger = logging.getLogger(__name__)
 
 # Tokens from docs/design_system.md (brand-deep blue, secondary ink).
 BRAND = RGBColor(0x1C, 0x5C, 0xAB)
 MUTED = RGBColor(0x52, 0x51, 0x4E)
-
-
-def _fmt(value: float | int | None, unit: str = "") -> str:
-    if value is None:
-        return "n/a"
-    if unit == "percent":
-        return f"{value}%"
-    if unit == "currency":
-        return f"${value:,.0f}"
-    return f"{value}"
 
 
 def _add_table(doc: DocumentType, headers: list[str], rows: list[list[str]]) -> None:

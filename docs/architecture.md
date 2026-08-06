@@ -23,10 +23,15 @@ flowchart TD
     Y[YAML profile] --> V[configuration.load_profile<br/>pydantic validation]
     L --> P[ingestion.prepare_dataset<br/>header mapping, type coercion,<br/>alias normalization, raw copy kept]
     V --> P
+    L --> PII[security.scan_dataframe_for_pii<br/>source frame, before mapping]
+    PII --> P
     P --> AU[audit.run_audit<br/>27 registered rules]
     P --> AN[analytics.compute_analytics]
     AU --> S[scoring<br/>overall / category / program]
-    AU --> W[security scan<br/>injection warnings]
+    AU --> W[security scan<br/>injection + PII warnings]
+    AU --> CW[corrections.build_worksheet<br/>flagged records out, fixes back in]
+    AU --> HI[history.record_run<br/>score, findings, per-rule counts]
+    AN --> HI
     AN --> ME[measure evaluation<br/>goal vs actual]
     AU --> FS[agents.build_fact_sheet<br/>aggregates only, sanitized]
     AN --> FS
@@ -38,9 +43,13 @@ flowchart TD
     CH --> HTML[HTML report]
     RB --> HTML
     RB --> DOCX[Word report]
+    RB --> PPTX[PowerPoint deck]
     AU --> XLSX1[audit workbook]
     AN --> XLSX2[analytics workbook]
 ```
+
+`batch.run_batch` drives this whole flow once per file in a folder and rolls the results
+up; a file that fails is recorded and the run continues.
 
 ## Module notes
 
@@ -76,11 +85,43 @@ with all data-derived strings passed through `security.sanitize_text`. Proactive
 present, only rewrites them as prose with instructions to keep every number unchanged.
 
 ### reporting
-`ReportData` bundles profile + analytics + audit + insights + executive summary. The HTML
-renderer embeds Plotly figures as fragments (plotly.js from CDN); the Word renderer builds
-the same sections as tables and text; Excel exports include a "Flagged Records" sheet that
-doubles as a correction template (original row + issues found + blank corrected-value
-columns).
+`ReportData` bundles profile + analytics + audit + insights + executive summary. Four
+renderers consume it and nothing else — HTML (Plotly fragments), Word, PDF (printed from
+the HTML), and PowerPoint — which is the only reason a figure cannot differ between
+formats. None of them recompute anything.
+
+Static images go through `chart_images.figure_png`, which returns `None` when kaleido is
+absent. Word and PowerPoint then render without charts rather than failing: an export
+missing its charts is still a correct export. Excel exports include a "Flagged Records"
+sheet, and `data_dictionary` renders the profile itself as the file specification to send
+to whoever produces the extract.
+
+### corrections
+The audit names every flawed record and recommends a fix; this module carries that back
+into the data. `build_worksheet` exports one row per flagged record; `apply_corrections`
+reads the filled sheet and writes to a **copy** of the source. Every edit is verified
+against the client ID captured at export time — a mismatched row, an out-of-range row, an
+unknown field or a duplicated header is refused and reported, because writing a correction
+to the wrong row would corrupt data silently and that is worse than refusing.
+
+### history
+One SQLite file beside the reports. `record_run` stores score, grade, findings, blocking
+count and every value from `metric_lookup()`, plus per-rule counts. Metrics and rule counts
+are stored long (one row per key per run) so a profile that gains a measure needs no
+migration.
+
+`aging` turns those counts into duration: "open for four consecutive runs since Q1" rather
+than "6 records". The `runs.rules_recorded` flag exists because a clean run and a run
+recorded before aging existed both have no rule rows — reading the second as clean would
+report a resolution that never happened.
+
+### security
+Two independent concerns over untrusted uploads. `sanitize` scrubs prompt-injection text
+before anything reaches a model. `pii` answers a different question — does this file look
+like it contains direct identifiers? — by header and by value shape, and runs against the
+*source* frame in `prepare_dataset`, because header mapping drops unmapped columns and a
+stray name column is unmapped by definition. Its findings are advisory and never affect
+the score: a false positive must not block a legitimate upload.
 
 ### datagen
 `generate_clean_dataset` produces data that audits at exactly 100/100 (verified by test).
