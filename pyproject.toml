@@ -33,10 +33,13 @@ mcp = [
 openai = [
     "openai>=1.0",
 ]
-# Static chart images for the Word report. Optional because kaleido ships a
-# browser binary; without it the Word report is generated without charts.
+# Static chart images for the Word and PowerPoint reports. Optional because
+# kaleido ships a browser binary; without it those reports omit charts.
 charts = [
     "kaleido>=1.0",
+]
+pptx = [
+    "python-pptx>=1.0",
 ]
 dev = [
     "pytest>=8.2",

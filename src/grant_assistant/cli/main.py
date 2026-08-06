@@ -188,7 +188,7 @@ def report(
     config_dir: ConfigDirOpt = None,
     output: OutputOpt = Path("output"),
     fmt: Annotated[
-        str, typer.Option("--format", "-f", help="Report formats: html, docx, pdf, or all.")
+        str, typer.Option("--format", "-f", help="Report formats: html, docx, pdf, pptx, or all.")
     ] = "all",
     template: Annotated[
         str,
@@ -216,8 +216,8 @@ def report(
             err=True,
         )
         raise typer.Exit(code=2)
-    if fmt not in {"html", "docx", "pdf", "all"}:
-        typer.secho("--format must be html, docx, pdf, or all", fg=typer.colors.RED, err=True)
+    if fmt not in {"html", "docx", "pdf", "pptx", "all"}:
+        typer.secho("--format must be html, docx, pdf, pptx, or all", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     result = _run(data_file, profile, config_dir)
     agent = result.make_agent(use_ai=ai)
@@ -228,12 +228,14 @@ def report(
 
     from grant_assistant.reporting import (
         PdfBackendError,
+        PptxBackendError,
         build_report_data,
         write_analytics_workbook,
         write_audit_workbook,
         write_docx_report,
         write_html_report,
         write_pdf_report,
+        write_pptx_report,
     )
 
     data = build_report_data(result.analytics, result.audit, result.profile, agent)
@@ -260,6 +262,14 @@ def report(
                 typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=2) from exc
             typer.secho(f"Skipping PDF: {exc}", fg=typer.colors.YELLOW)
+    if fmt in {"pptx", "all"}:
+        try:
+            written.append(write_pptx_report(data, output / "grant_report.pptx"))
+        except PptxBackendError as exc:
+            if fmt == "pptx":
+                typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=2) from exc
+            typer.secho(f"Skipping PowerPoint: {exc}", fg=typer.colors.YELLOW)
     written.append(
         write_audit_workbook(result.audit, result.prepared, output / "audit_workbook.xlsx")
     )
