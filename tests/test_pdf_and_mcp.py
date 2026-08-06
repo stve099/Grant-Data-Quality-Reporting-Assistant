@@ -218,3 +218,106 @@ def test_mcp_audit_tool_runs_pipeline(monkeypatch):
     assert summary["total_findings"] > 50
     assert summary["grade"] in {"A", "B", "C", "D", "F"}
     assert CONFIG_DIR.exists()
+
+
+# -- MCP tool bodies ---------------------------------------------------------
+#
+# Registration was asserted, but the tool functions themselves never ran. A tool
+# that is registered and raises when called is worse than one that is absent.
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_audit_dataset_returns_an_aggregated_summary(tmp_path, flawed):
+    from grant_assistant import mcp_server
+
+    path = tmp_path / "flawed.csv"
+    flawed[0].to_csv(path, index=False)
+    result = mcp_server.audit_dataset(str(path))
+
+    assert 0 <= result["overall_score"] <= 100
+    assert result["total_rows"] > 0
+    assert result["issues"]
+    # Aggregates only: no client-level records may cross this boundary.
+    assert "records" not in result
+    assert all("row" not in issue for issue in result["issues"])
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_analyze_dataset_returns_metrics(tmp_path, clean_df):
+    from grant_assistant import mcp_server
+
+    path = tmp_path / "clean.csv"
+    clean_df.to_csv(path, index=False)
+    result = mcp_server.analyze_dataset(str(path))
+
+    assert result["headline_metrics"]["total_enrollments"] > 0
+    assert result["programs"]
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_generate_report_writes_the_files_it_names(tmp_path, clean_df):
+    from grant_assistant import mcp_server
+
+    path = tmp_path / "clean.csv"
+    clean_df.to_csv(path, index=False)
+    written = mcp_server.generate_report(str(path), output_dir=str(tmp_path / "out"))
+
+    assert written
+    for entry in written:
+        assert Path(entry).exists(), entry
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_ask_analyst_answers_deterministically(tmp_path, clean_df, monkeypatch):
+    from grant_assistant import mcp_server
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    path = tmp_path / "clean.csv"
+    clean_df.to_csv(path, index=False)
+    answer = mcp_server.ask_analyst(str(path), "How many enrollments were there?")
+    assert isinstance(answer, str)
+    assert answer.strip()
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_batch_tool_rolls_up_a_folder(tmp_path, clean_df, flawed):
+    from grant_assistant import mcp_server
+
+    clean_df.to_csv(tmp_path / "a.csv", index=False)
+    flawed[0].to_csv(tmp_path / "b.csv", index=False)
+    result = mcp_server.batch_audit(str(tmp_path))
+
+    assert result["files_audited"] == 2
+    assert result["weighted_score"] is not None
+    assert len(result["per_file"]) == 2
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_history_tool_reads_recorded_runs(tmp_path, profile, audit_flawed, analytics_flawed):
+    from grant_assistant import mcp_server
+    from grant_assistant.history import record_run
+
+    db = tmp_path / "history.db"
+    record_run(profile, audit_flawed, analytics_flawed, db, label="Q1")
+    result = mcp_server.data_quality_history(str(db))
+
+    assert result["runs"] == 1
+    assert result["history"][0]["label"] == "Q1"
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_resources_return_content():
+    from grant_assistant import mcp_server
+
+    assert "housing_stability" in mcp_server.list_profiles_resource()
+    assert "DQ-" in mcp_server.audit_rules_resource()
+    assert mcp_server.measure_definitions_resource().strip()
+
+
+@pytest.mark.skipif(not _HAS_MCP, reason="mcp extra not installed")
+def test_prompts_render():
+    from grant_assistant import mcp_server
+
+    review = mcp_server.review_grant_report("data.csv")
+    assert "data.csv" in review
+    assert "DQ-010" in mcp_server.explain_data_quality_issue("DQ-010")
