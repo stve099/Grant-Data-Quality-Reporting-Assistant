@@ -86,6 +86,7 @@ uv run grant-assistant full-run sample_data/housing_program_flawed.csv --profile
 uv run grant-assistant audit   sample_data/housing_program_flawed.csv --profile housing_stability
 uv run grant-assistant analyze sample_data/housing_program_flawed.csv --profile housing_stability
 uv run grant-assistant report  sample_data/housing_program_flawed.csv --profile rapid_rehousing
+uv run grant-assistant report  sample_data/housing_program_flawed.csv --format pptx   # board deck
 uv run grant-assistant ask     sample_data/housing_program_flawed.csv "Which program had the best outcomes?"
 uv run grant-assistant insights sample_data/housing_program_flawed.csv --profile housing_stability
 uv run grant-assistant compare current_period.csv prior_period.csv --profile housing_stability
@@ -108,6 +109,12 @@ uv run grant-assistant history --metric permanent_housing_rate
 
 # The file specification to send to whoever produces the extract
 uv run grant-assistant data-dictionary --output docs/spec.html
+
+# Onboard a new funder: draft a profile from one of their extracts
+uv run grant-assistant draft-profile their_export.csv --id county_esg --name "County ESG"
+
+# Decide which model to run, with evidence rather than a hunch
+uv run grant-assistant compare-models "gpt-4o-mini,gpt-oss:120b" --runs 3
 
 # Utilities
 uv run grant-assistant generate-sample-data
@@ -393,7 +400,8 @@ Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISH
 
 ## Roadmap
 
-- PowerPoint executive summary export
+- Equity analysis: outcome rates by demographic, with small-sample suppression
+- Length-of-stay metrics
 - Scheduled audits with email summaries
 - Funder submission-format validation (HMIS CSV and similar)
 

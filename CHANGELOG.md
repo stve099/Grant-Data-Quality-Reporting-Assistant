@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.5.0 — 2026-08-06
+
+Makes the results portable to the rooms where decisions happen, turns findings
+into trends, and takes the guesswork out of two choices that were previously
+made by feel: which model to run, and how to onboard a funder.
+
+### Added
+- **PowerPoint export** (`report --format pptx`) — an eleven-slide executive
+  deck: title, at-a-glance figures, executive summary, three charts, measures
+  against target, data quality with blocking issues named, findings, actions,
+  and methodology. It consumes the same `ReportData` as the HTML and Word
+  renderers, so a figure cannot differ between them — one source, three
+  renderers. Requires the optional `pptx` extra; charts additionally need
+  `charts`, and without either the deck degrades rather than fails.
+- **Issue aging** — `record-run` now reports how long each finding has been
+  open ("open for 4 consecutive runs since Q1") and what was resolved since the
+  previous run. A count reads as a slip; a duration reads as a process that is
+  not working. Cleanup that succeeded was previously invisible, because a fixed
+  finding simply stops appearing.
+- **Model comparison** (`compare-models`) — runs the evaluation across several
+  models and ranks them, breaking ties on the worst single run before cost,
+  because a model that averages well but collapses occasionally is worse than a
+  steady one. Token totals are reported alongside scores: the cheapest model
+  that clears the grounding bar is usually the right answer.
+- **Profile generator** (`draft-profile`) — infers field mappings, programs,
+  controlled vocabularies and the reporting period from a sample extract.
+  Deliberately a draft: uncertain guesses are commented out rather than applied,
+  unmapped columns and missing required fields are listed, and performance
+  measures are left empty because targets come from the funder and cannot be
+  read off a data file.
+
+### Changed
+- The history store records per-rule counts, and `runs` gains a
+  `rules_recorded` flag. Without it a clean run and a run recorded before aging
+  existed are indistinguishable — both have no rule rows — and reading the
+  second as clean would report a resolution that never happened. Databases
+  created by 1.4.0 are migrated automatically.
+
 ## 1.4.0 — 2026-08-05
 
 Closes the loop from "this data is wrong" to "this data is fixed, and here is the
