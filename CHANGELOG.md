@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.5.1 — 2026-08-06
+
+Maintenance from a full review of the repository. No new features; the changes
+are to documentation, test coverage, and one visible formatting inconsistency.
+
+### Changed
+- **Word reports format large numbers with thousands separators.** The Word and
+  PowerPoint renderers each carried a private copy of the same formatter and the
+  copies had drifted: `1284` in one document, `1,284` in the other, from one
+  calculation. They now share `reporting.formatting.format_value`, with a test
+  asserting both reference the same object. This is the only user-visible change
+  in the release.
+- `evals/comparison.py` is now `evals/model_comparison.py`.
+  `analytics/comparison.py` compares reporting periods and the two are unrelated,
+  so every import had to spell out its full path to disambiguate.
+- The Streamlit app is measured by coverage rather than excluded from it.
+  `AppTest` executes the page script in-process, so the exclusion was hiding real
+  signal: features added to the largest file in the repo were verified by
+  nothing. It now reports 56%.
+
+### Added
+- **Documentation of the current architecture.** `CLAUDE.md` and
+  `docs/architecture.md` described a ten-package project; there are fourteen.
+  Neither mentioned `corrections/`, `history/`, `batch.py`, `security/pii.py`,
+  `env.py`, `reporting/pptx_report.py` or `configuration/generator.py`.
+  `CLAUDE.md` also gains procedures for the patterns established since — adding a
+  report renderer, a CLI command, a history-backed feature, an MCP tool — and the
+  gotchas that have cost real time.
+- **CLI wiring tests**, taking `cli/main.py` from 40% to 80%. Ten of nineteen
+  commands had no CLI-level test. Their logic was well covered; the wiring was
+  not, and wiring is where they actually break — a stripped import, a missing
+  symbol.
+- **Streamlit smoke tests**: every page renders with and without data, plus a
+  test asserting the page list matches the navigation, so a rename fails loudly
+  instead of silently skipping.
+- **PDF backend-detection tests**, covering the playwright, Edge and
+  neither-available branches (60% to 71%).
+- An **`/add-metric` skill** for a procedure `CLAUDE.md` documented but no skill
+  covered.
+
+Total coverage is 91% including the UI, on a larger denominator than the 89%
+previously reported.
+
 ## 1.5.0 — 2026-08-06
 
 Makes the results portable to the rooms where decisions happen, turns findings
