@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.5.2 — 2026-08-07
+
+Test-only release. No behaviour changes; the value is in what is now verified
+rather than in anything that moved.
+
+### Added
+- **Coverage of the AI fallback path.** Every AI entry point already computed a
+  deterministic answer and fell back to it when the provider failed — real
+  shipped behaviour that nothing checked. A provider that raises is now driven
+  through `narrated_insights`, `executive_summary` and `ask`, asserting the user
+  still gets the calculated answer and the operator still gets a warning in the
+  log. The tests also pin a deliberate asymmetry found while writing them: chat
+  answers say "AI provider unavailable" while report paths fall back silently,
+  because a report states its provenance elsewhere and someone waiting on a chat
+  answer needs to know which kind they received.
+- **Streamlit interaction tests.** The earlier tests rendered pages; these press
+  the buttons — build report, prepare each of the three workbooks, read the score
+  off the audit dashboard. The correction-worksheet download added in 1.5.0 had
+  never been executed by anything.
+- **MCP tool-body tests.** Registration was asserted, but no tool body ever ran,
+  and a tool that is registered and raises is worse than one that is absent.
+  Every tool, resource and prompt is now invoked, including an assertion that
+  `audit_dataset` returns no client-level records.
+
+Coverage 91% → 93%: UI 56% → 75%, MCP 74% → 90%, analyst 84% → 90%.
+`pdf_report` is left at 71% deliberately — its remaining lines need a real
+browser subprocess, and the branch that matters, no backend available, is
+already covered.
+
 ## 1.5.1 — 2026-08-06
 
 Maintenance from a full review of the repository. No new features; the changes
