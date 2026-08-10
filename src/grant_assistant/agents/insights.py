@@ -16,6 +16,17 @@ from pydantic import BaseModel, Field
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
 from grant_assistant.models import AuditResult, Severity
+from grant_assistant.security import sanitize_text
+
+# Program and measure names are data-derived: a draft profile pulls them
+# straight from uploaded cell values (configuration/generator.py), and this
+# report is interpolated into the *user message* of the AI narration/summary
+# prompt (analyst.py) — the channel the system prompt treats as instructions,
+# not the fact-sheet delimiters it treats as data. The fact sheet and tool
+# results already sanitize these same values; every one interpolated here must
+# pass through sanitize_text too, or an attacker-controlled cell value reaches
+# the model as an instruction. Rule name/explanation/recommendation are
+# code-authored constants, so they are left as-is.
 
 
 class InsightReport(BaseModel):
@@ -128,7 +139,7 @@ def generate_insights(
             if abs(gap) >= 20 and not p.small_sample:
                 verb = "above" if gap > 0 else "below"
                 r.anomalies.append(
-                    f"{p.program}'s successful-exit rate ({_fmt_pct(p.successful_exit_rate)}) is "
+                    f"{sanitize_text(p.program)}'s successful-exit rate ({_fmt_pct(p.successful_exit_rate)}) is "
                     f"{abs(gap):.0f} points {verb} the cross-program average "
                     f"({mean_rate:.1f}%) — worth explaining before publication."
                 )
@@ -139,7 +150,7 @@ def generate_insights(
     small = [p for p in analytics.programs if p.small_sample and p.exits > 0]
     for p in small:
         r.anomalies.append(
-            f"{p.program} has only {p.exits} exits — its outcome rates are unstable and a "
+            f"{sanitize_text(p.program)} has only {p.exits} exits — its outcome rates are unstable and a "
             "single client changes them by several points. Treat comparisons with caution."
         )
 
@@ -187,24 +198,24 @@ def generate_insights(
     if ranked:
         best = ranked[0]
         r.program_strengths.append(
-            f"{best.program} leads on successful exits: {_fmt_pct(best.successful_exit_rate)} "
+            f"{sanitize_text(best.program)} leads on successful exits: {_fmt_pct(best.successful_exit_rate)} "
             f"of {best.exits} exits."
         )
         if best.avg_income_change is not None and best.avg_income_change > 0:
             r.program_strengths.append(
-                f"{best.program} exits also show positive average income change "
+                f"{sanitize_text(best.program)} exits also show positive average income change "
                 f"({_fmt_usd(best.avg_income_change)})."
             )
     if len(ranked) >= 2:
         worst = ranked[-1]
         r.program_concerns.append(
-            f"{worst.program} trails on successful exits "
+            f"{sanitize_text(worst.program)} trails on successful exits "
             f"({_fmt_pct(worst.successful_exit_rate)} of {worst.exits} exits); review exit "
             "planning and destination documentation."
         )
     for m in missed:
         r.program_concerns.append(
-            f"Below target: {m.name} at {m.actual}{'%' if m.unit == 'percent' else ''} vs. "
+            f"Below target: {sanitize_text(m.name)} at {m.actual}{'%' if m.unit == 'percent' else ''} vs. "
             f"target {m.target}{'%' if m.unit == 'percent' else ''}"
             + (" (small sample — interpret with caution)." if m.small_sample else ".")
         )
@@ -226,7 +237,7 @@ def generate_insights(
                 break
     for m in missed[:3]:
         r.recommended_actions.append(
-            f"Develop an improvement plan for '{m.name}' (actual {m.actual} vs target {m.target})."
+            f"Develop an improvement plan for '{sanitize_text(m.name)}' (actual {m.actual} vs target {m.target})."
         )
 
     # --- Questions for investigation ---------------------------------------
