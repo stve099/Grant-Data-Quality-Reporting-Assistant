@@ -41,7 +41,7 @@ commands with `UV_LINK_MODE=copy` (PowerShell: `$env:UV_LINK_MODE='copy'`) if yo
 configuration/  pydantic profile models + YAML loader (the funder's rules), plus a
                 generator that drafts a profile from a sample extract
 ingestion/      file loading, header mapping, type coercion; keeps a raw copy
-audit/          rule registry (@rule decorator), 27 rules, scoring model
+audit/          rule registry (@rule decorator), 28 rules, scoring model
 analytics/      deterministic metrics, period comparison, plotly charts
 agents/         provider abstraction, fact sheet, tools, workflows, insights, analyst
 evals/          prompt-eval dataset, graders, runner, model_comparison

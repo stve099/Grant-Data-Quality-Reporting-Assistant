@@ -222,4 +222,44 @@ def outside_period(ctx: RuleContext) -> list[AuditIssue]:
     ]
 
 
+@rule(
+    "DQ-035",
+    "Future-dated event",
+    "consistency",
+    Severity.HIGH,
+    description="Enrollment or exit dates later than the audit date.",
+)
+def future_dated(ctx: RuleContext) -> list[AuditIssue]:
+    # DQ-020 catches dates that cannot be parsed; DQ-034 catches dates after
+    # the reporting period *end*. Neither catches a date that is a valid
+    # calendar date, inside the reporting period, but still in the future
+    # relative to today — which can only happen mid-period, exactly when the
+    # on-pace figures from v1.6.0 are reported. A future enrollment or exit
+    # has not happened yet, so it inflates current counts and the pacing
+    # derived from them.
+    df = ctx.data.df
+    today = pd.Timestamp(ctx.today)
+    records: list[IssueRecord] = []
+    for col in (schema.ENROLLMENT_DATE, schema.EXIT_DATE):
+        mask = df[col].notna() & (df[col] > today)
+        records.extend(_records(ctx, mask, field=col, value_col=col))
+    if not records:
+        return []
+    return [
+        _issue(
+            "DQ-035",
+            "Future-dated event",
+            "consistency",
+            Severity.HIGH,
+            False,
+            f"Enrollment or exit dates fall after the audit date ({ctx.today.isoformat()}). "
+            "A future date cannot have happened yet, so it inflates current-period counts "
+            "and the on-pace figures derived from them.",
+            "Correct the date to the real value, or hold the record back until the event "
+            "has occurred.",
+            records,
+        )
+    ]
+
+
 # -- Case management ---------------------------------------------------------

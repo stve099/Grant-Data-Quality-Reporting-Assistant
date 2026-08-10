@@ -242,7 +242,7 @@ flowchart LR
         U[CSV / Excel upload] --> I[ingestion<br/>mapping + normalization]
         P[configs/*.yaml<br/>grant profiles] --> I
     end
-    I --> A[audit engine<br/>27 rules + scoring]
+    I --> A[audit engine<br/>28 rules + scoring]
     I --> M[analytics<br/>deterministic metrics]
     A --> F[fact sheet<br/>aggregated + sanitized]
     M --> F
@@ -266,7 +266,7 @@ src/grant_assistant/
 ├── followups.py       # shared follow-up due/overdue math
 ├── configuration/     # pydantic profile models + YAML loader
 ├── ingestion/         # safe file loading, field mapping, type normalization
-├── audit/             # rule registry, 27 rules, scoring model
+├── audit/             # rule registry, 28 rules, scoring model
 ├── analytics/         # deterministic metrics + plotly chart builders
 ├── agents/            # provider abstraction, fact sheet, insights, analyst
 ├── security/          # prompt-injection scrubbing for untrusted data

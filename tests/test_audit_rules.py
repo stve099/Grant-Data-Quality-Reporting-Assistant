@@ -212,6 +212,32 @@ def test_severity_overrides_to_medium(hp_profile):
     assert by_rule["DQ-002"].severity == Severity.MEDIUM
 
 
+def test_future_dated_event_detected(profile):
+    # DQ-035 fires on enrollment/exit dates after the audit date (TODAY).
+    rows = [
+        make_row(VALID_EXITED, enrollment_date="2026-09-01", exit_date="2026-10-01"),
+    ]
+    fired = fired_rules(audit_source_rows(rows, profile))
+    assert fired["DQ-035"] == {"C-2"}
+
+
+def test_future_dated_not_fired_for_past_in_period_dates(profile):
+    # The valid template is dated 2024-2025, inside the period and before TODAY,
+    # so it must not trip the future-dated rule.
+    audit = audit_source_rows([dict(VALID_EXITED)], profile)
+    fired = fired_rules(audit)
+    assert "DQ-035" not in fired
+
+
+def test_past_out_of_period_dates_are_dq034_not_dq035(profile):
+    # A date after the reporting period end but before TODAY is DQ-034's job,
+    # not DQ-035's — the two date-range checks must stay distinct.
+    rows = [make_row(VALID_EXITED, exit_date="2025-09-01")]
+    fired = fired_rules(audit_source_rows(rows, profile))
+    assert "DQ-034" in fired
+    assert "DQ-035" not in fired
+
+
 def test_issue_metadata_completeness(profile):
     """Every finding must carry the full metadata contract from the spec."""
     rows = [make_row(client_id=""), dict(VALID_ACTIVE)]

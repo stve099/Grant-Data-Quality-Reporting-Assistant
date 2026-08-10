@@ -25,7 +25,7 @@ flowchart TD
     V --> P
     L --> PII[security.scan_dataframe_for_pii<br/>source frame, before mapping]
     PII --> P
-    P --> AU[audit.run_audit<br/>27 registered rules]
+    P --> AU[audit.run_audit<br/>28 registered rules]
     P --> AN[analytics.compute_analytics]
     AU --> S[scoring<br/>overall / category / program]
     AU --> W[security scan<br/>injection + PII warnings]

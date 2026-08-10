@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.8.0 — 2026-08-10
+
+A new audit rule for a class of error no existing rule could catch, found by a
+gap analysis rather than chosen at random.
+
+### Added
+- **DQ-035 — Future-dated event.** Fires when an enrollment or exit date is a
+  valid calendar date but later than the audit date. DQ-020 catches dates that
+  cannot be parsed; DQ-034 catches dates after the *reporting period end*.
+  Neither catches a date that is valid, inside the reporting period, and still
+  in the future — which can only happen during mid-period reporting, exactly
+  when the on-pace figures added in 1.6.0 are reported. A future date has not
+  happened yet, so it inflates current-period counts and the pacing derived
+  from them. High severity, non-blocking by default; a profile can elevate it
+  the same way `homeless_prevention` elevates DQ-033. Not injected into the
+  flawed sample, which is anchored to a fixed past period (2024-07 to 2025-06)
+  where a today-relative rule can never fire; covered by targeted tests
+  instead, including one that pins DQ-034 and DQ-035 as distinct date-range
+  checks.
+
 ## 1.7.0 — 2026-08-10
 
 A third example grant profile, proving the configuration system generalizes
