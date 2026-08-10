@@ -873,7 +873,7 @@ def draft_profile_command(
     output.write_text(draft_to_yaml(draft), encoding="utf-8")
     typer.secho(f"\nDraft: {output}", fg=typer.colors.GREEN)
     typer.echo("Review every mapping, add the performance measures, then run:")
-    typer.echo(f"  grant-assistant validate-config --path {output}")
+    typer.echo(f"  grant-assistant validate-config {output}")
 
 
 @app.command("compare-models")

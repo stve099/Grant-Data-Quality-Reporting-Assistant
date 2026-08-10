@@ -16,6 +16,7 @@ from grant_assistant.configuration.generator import (
     draft_profile,
     draft_to_yaml,
 )
+from grant_assistant.configuration.loader import load_profile_file
 
 
 @pytest.fixture()
@@ -168,3 +169,68 @@ def test_real_sample_data_maps_cleanly(clean_df):
     draft = draft_profile(clean_df)
     assert not draft.missing_required
     assert draft.programs
+
+
+# -- Destination categories --------------------------------------------------
+
+
+def _extract_with_destinations() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "Client ID": ["C-1", "C-2", "C-3", "C-4"],
+            "Household ID": ["H-1", "H-2", "H-3", "H-4"],
+            "Program": ["Shelter", "RRH", "Shelter", "RRH"],
+            "Entry Date": ["2024-08-01", "2024-09-01", "2024-10-01", "2024-11-01"],
+            "Enrollment Status": ["Exited", "Exited", "Exited", "Exited"],
+            "Exit Destination": [
+                "Permanent housing",
+                "Temporary housing",
+                "Emergency shelter",
+                "Other destination",
+            ],
+        }
+    )
+
+
+def test_destination_categories_are_inferred_from_values():
+    draft = draft_profile(_extract_with_destinations())
+    assert draft.destination_categories == {
+        "permanent_housing": ["Permanent housing"],
+        "temporary_housing": ["Temporary housing"],
+        "homeless": ["Emergency shelter"],
+        "other": ["Other destination"],
+    }
+
+
+def test_successful_exit_categories_defaults_to_permanent_housing():
+    text = draft_to_yaml(draft_profile(_extract_with_destinations()))
+    parsed = yaml.safe_load(text)
+    assert parsed["successful_exit_categories"] == ["permanent_housing"]
+
+
+def test_draft_yaml_validates_when_destinations_present(tmp_path):
+    """A draft must validate as-is, not fail on a hidden default."""
+    # Before categories were inferred, the draft omitted
+    # exit_destination_categories while the model defaulted
+    # successful_exit_categories to ['permanent_housing'], so validate-config
+    # rejected it for referencing an undefined category the user could not see.
+    path = tmp_path / "draft.yaml"
+    path.write_text(draft_to_yaml(draft_profile(_extract_with_destinations())), encoding="utf-8")
+    load_profile_file(path)  # raises ProfileValidationError if the draft is broken
+
+
+def test_draft_yaml_validates_with_no_destinations(tmp_path):
+    """No destinations -> empty categories -> still validates."""
+    frame = pd.DataFrame(
+        {
+            "Client ID": ["C-1", "C-2"],
+            "Household ID": ["H-1", "H-2"],
+            "Program": ["Shelter", "RRH"],
+            "Entry Date": ["2024-08-01", "2024-09-01"],
+            "Enrollment Status": ["Active", "Active"],
+        }
+    )
+    path = tmp_path / "draft.yaml"
+    path.write_text(draft_to_yaml(draft_profile(frame)), encoding="utf-8")
+    profile = load_profile_file(path)
+    assert profile.successful_exit_categories == []

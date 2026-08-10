@@ -5,4 +5,4 @@ and generates dashboards and professional reports with a grounded
 AI data analyst agent.
 """
 
-__version__ = "1.8.2"
+__version__ = "1.9.0"

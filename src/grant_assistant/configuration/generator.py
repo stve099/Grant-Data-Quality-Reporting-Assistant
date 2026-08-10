@@ -75,6 +75,9 @@ class ProfileDraft:
     missing_required: list[str] = field(default_factory=list)
     programs: list[str] = field(default_factory=list)
     vocabularies: dict[str, list[str]] = field(default_factory=dict)
+    #: Outcome categories inferred from the exit-destination vocabulary. Empty
+    #: when there are no destinations to bucket; the human fills it in otherwise.
+    destination_categories: dict[str, list[str]] = field(default_factory=dict)
     period_start: str = ""
     period_end: str = ""
 
@@ -145,6 +148,63 @@ def _infer_period(frame: pd.DataFrame, columns: list[str]) -> tuple[str, str]:
     return min(stamps).date().isoformat(), max(stamps).date().isoformat()
 
 
+#: Keyword -> category, checked in order. The first matching category wins, so
+#: "Staying with family, permanent" lands in permanent_housing, not
+#: temporary_housing. Covers both explicit ESG labels ("Permanent housing") and
+#: HMIS phrasings ("Rental by client, no subsidy") well enough that a human
+#: usually renames a category rather than re-bucketing every value.
+_DESTINATION_CATEGORY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("permanent_housing", ("permanent", "rental", "homeownership", "home ownership")),
+    (
+        "temporary_housing",
+        (
+            "temporary",
+            "transitional",
+            "hotel",
+            "motel",
+            "staying with friends",
+            "staying or living with friends",
+        ),
+    ),
+    (
+        "homeless",
+        ("shelter", "emergency", "street", "habitation", "place not meant", "unsheltered"),
+    ),
+    (
+        "institutional",
+        (
+            "hospital",
+            "jail",
+            "prison",
+            "substance",
+            "treatment",
+            "facility",
+            "foster",
+            "psychiatric",
+        ),
+    ),
+)
+
+
+def _infer_destination_categories(destinations: list[str]) -> dict[str, list[str]]:
+    """Bucket destination values into outcome categories by keyword.
+
+    A heuristic for the draft only -- the funder's real grouping may differ, so
+    the emitted YAML is annotated for review. Values that match no keyword fall
+    into ``other``.
+    """
+    buckets: dict[str, list[str]] = {}
+    for value in destinations:
+        label = value.casefold()
+        category = "other"
+        for cat, keywords in _DESTINATION_CATEGORY_KEYWORDS:
+            if any(kw in label for kw in keywords):
+                category = cat
+                break
+        buckets.setdefault(category, []).append(value)
+    return {cat: sorted(vals) for cat, vals in sorted(buckets.items())}
+
+
 def draft_profile(
     frame: pd.DataFrame, profile_id: str = "new_grant", grant_name: str = "New Grant"
 ) -> ProfileDraft:
@@ -196,6 +256,8 @@ def draft_profile(
         distinct = sorted({v for v in values if v})
         if 0 < len(distinct) <= MAX_VOCABULARY_SIZE:
             draft.vocabularies[canonical] = distinct
+            if canonical == schema.EXIT_DESTINATION:
+                draft.destination_categories = _infer_destination_categories(distinct)
 
     date_columns = [reverse[c] for c in (schema.ENROLLMENT_DATE, schema.EXIT_DATE) if c in reverse]
     draft.period_start, draft.period_end = _infer_period(frame, date_columns)
@@ -272,6 +334,27 @@ def draft_to_yaml(draft: ProfileDraft) -> str:
                 lines.append(f"    - {quote(value)}")
     else:
         lines.append("  {}")
+    lines.append("")
+
+    # Destination categories are inferred from the exit-destination vocabulary so
+    # the draft validates as-is; the human reviews the bucketing rather than
+    # building it from scratch. successful_exit_categories defaults to
+    # permanent_housing when that bucket exists, else empty (the human picks).
+    if draft.destination_categories:
+        lines.append("# Inferred from the destination values — review the bucketing:")
+        lines.append("exit_destination_categories:")
+        for category, values in draft.destination_categories.items():
+            lines.append(f"  {category}:")
+            for value in values:
+                lines.append(f"    - {quote(value)}")
+        success = (
+            ["permanent_housing"] if "permanent_housing" in draft.destination_categories else []
+        )
+        lines.append(f"successful_exit_categories: [{', '.join(success)}]")
+    else:
+        lines.append("# No exit destinations were found; fill these in from the funder's rules:")
+        lines.append("exit_destination_categories: {}")
+        lines.append("successful_exit_categories: []")
     lines.append("")
 
     lines += [

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.9.0 — 2026-08-10
+
+The profile generator now produces a draft that validates as-is, found by
+running `draft-profile` against a novel extract during a verification pass.
+
+### Added
+- **`draft-profile` infers exit-destination categories from the data.** The
+  generator already transcribed the destination vocabulary; it now buckets those
+  values into outcome categories (`permanent_housing`, `temporary_housing`,
+  `homeless`, `institutional`, `other`) by keyword and emits
+  `exit_destination_categories` plus a `successful_exit_categories: [permanent_housing]`
+  default. The keyword table covers both explicit ESG labels ("Permanent housing")
+  and HMIS phrasings ("Rental by client, no subsidy"), and the YAML is annotated
+  "review the bucketing" so a human usually renames a category rather than
+  re-bucketing every value. The one thing a funder's data file genuinely cannot
+  supply — performance targets — is still left empty for the human.
+
+### Fixed
+- **`draft-profile`'s hand-off hint no longer references a non-existent option.**
+  It told users to run `validate-config --path <file>`, but `validate-config`
+  takes the path as a positional argument and has no `--path`. The instruction
+  now reads `validate-config <file>`. A draft that failed validation on a hidden
+  default (see above) also blocked this hand-off, so the two were found together.
+
 ## 1.8.2 — 2026-08-10
 
 A prompt-injection bypass found by a security review of the untrusted-upload
