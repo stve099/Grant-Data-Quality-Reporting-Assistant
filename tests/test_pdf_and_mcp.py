@@ -27,6 +27,32 @@ def test_pdf_report_renders(analytics_flawed, audit_flawed, profile, tmp_path):
     assert len(content) > 20_000
 
 
+@pytest.mark.skipif(pdf_backend() is None, reason="no headless-browser PDF backend installed")
+def test_pdf_report_renders_concise_template(analytics_flawed, audit_flawed, profile, tmp_path):
+    from grant_assistant.reporting import write_pdf_report
+
+    data = build_report_data(analytics_flawed, audit_flawed, profile)
+    path = write_pdf_report(data, tmp_path / "report.pdf", template="concise")
+    assert path.exists()
+    assert path.read_bytes()[:5] == b"%PDF-"
+
+
+def test_pdf_report_raises_when_no_backend(
+    monkeypatch, analytics_flawed, audit_flawed, profile, tmp_path
+):
+    """The degrade-or-error contract: without any backend, the caller gets a clear error."""
+    from grant_assistant.reporting import pdf_report
+
+    monkeypatch.setattr(pdf_report, "_playwright_available", lambda: False)
+    monkeypatch.setattr(pdf_report, "_find_edge", lambda: None)
+
+    with pytest.raises(Exception) as exc_info:  # PdfBackendError
+        pdf_report.write_pdf_report(
+            build_report_data(analytics_flawed, audit_flawed, profile), tmp_path / "report.pdf"
+        )
+    assert "headless browser" in str(exc_info.value).lower()
+
+
 def test_report_includes_print_rules(analytics_flawed, audit_flawed, profile):
     """Pagination rules must ship, or PDFs break blocks across pages."""
     from grant_assistant.reporting import render_html_report
