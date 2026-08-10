@@ -121,10 +121,12 @@ jobs:
         run: uv run grant-assistant validate-config
 
       - name: Run the compare command on a real Windows console
-        # The compare command once crashed here because Unicode arrows could not
-        # be encoded to cp1252. A real Windows runner is the only regression
-        # guard that exercises the actual console codec.
+        # Force the codec that triggered the original crash. GitHub's redirected
+        # stdout is otherwise commonly UTF-8 even on a Windows runner.
+        env:
+          PYTHONIOENCODING: cp1252
         run: |
+          uv run python -c "import sys; assert sys.stdout.encoding.lower().replace('-', '') == 'cp1252', sys.stdout.encoding"
           uv run grant-assistant generate-sample-data --output ci_sample
           uv run grant-assistant compare ci_sample/housing_program_clean.csv ci_sample/housing_program_flawed.csv --profile housing_stability --records --records-output ci_out/record_diff.csv
 

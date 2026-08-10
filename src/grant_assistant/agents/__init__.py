@@ -6,19 +6,23 @@ from grant_assistant.agents.insights import InsightReport, generate_insights
 from grant_assistant.agents.provider import (
     AIProvider,
     AIProviderError,
+    AIProviderFailure,
     AnthropicProvider,
     OpenAICompatibleProvider,
+    complete_async,
     get_provider,
 )
 
 __all__ = [
     "AIProvider",
     "AIProviderError",
+    "AIProviderFailure",
     "AnthropicProvider",
     "DataAnalystAgent",
     "InsightReport",
     "OpenAICompatibleProvider",
     "build_fact_sheet",
+    "complete_async",
     "generate_insights",
     "get_provider",
 ]

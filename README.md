@@ -22,7 +22,7 @@ All included data is **synthetic** — no real client information exists anywher
 | **Analytics** | Deterministic enrollment/exit/outcome/income/follow-up/demographic metrics, program comparisons, monthly trends, period-over-period deltas, and goal-vs-actual performance measures (grant-wide or program-scoped) — every number computed in transparent, tested pandas code. |
 | **AI Data Analyst Agent** | A Senior-Analyst-style agent with **typed tool use**: Claude retrieves exact values through read-only tools over the calculated results, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries. Uses prompt caching, streaming, and extended thinking. Works fully offline in non-AI mode. |
 | **Prompt Evaluation** | A graded eval harness (`grant-assistant eval`) that mechanically verifies the grounding contract: every number traced to a calculation, no client identifiers, refusal when data is unavailable, no system-prompt disclosure. Code-based graders plus an optional model-based rubric judge. |
-| **Report Generator** | Polished HTML report with embedded interactive Plotly charts (CDN or fully offline), a **concise executive brief** template, **PDF export** via headless browser, Microsoft Word report, Excel audit workbook (with a correction template), and Excel analytics workbook. |
+| **Report Generator** | Branded, section-selectable HTML report with embedded interactive Plotly charts (CDN or fully offline), a **concise executive brief** template, **PDF export** via headless browser, Microsoft Word report, Excel audit workbook (with a correction template), and Excel analytics workbook. |
 | **Grant Profiles** | YAML configuration drives everything: field mappings, program aliases, controlled vocabularies, follow-up schedules, performance targets, destination categories, severity overrides, and blocking rules. Three example profiles included. |
 | **Interfaces** | An 11-page Streamlit web app, a full-featured Typer CLI, an **MCP server**, and a Docker image. |
 
@@ -110,6 +110,14 @@ uv run grant-assistant batch ./extracts --pattern "2025-*.csv"
 # Quality over time: record each run, then chart the trend
 uv run grant-assistant record-run sample_data/housing_program_flawed.csv --label "Q1"
 uv run grant-assistant history --metric permanent_housing_rate --chart output/trend.html
+
+# Flatten one-to-one related extracts before auditing
+uv run grant-assistant merge-datasets enrollments.csv income.csv assessments.csv \
+  --output output/combined.csv --profile housing_stability
+
+# One-shot command for Windows Task Scheduler/cron; records history and writes a report
+uv run grant-assistant scheduled-audit extract.csv --label "nightly"
+# Add --email-to data-team@example.org after configuring the SMTP variables in .env.example
 
 # Gate a pipeline on the score, not just on blocking issues
 uv run grant-assistant audit extract.csv --fail-under 90
@@ -408,17 +416,15 @@ Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISH
   in the HTML/PDF reports and dashboards).
 - Statistical trend rules (volume anomalies) use simple z-score/IQR heuristics, not
   forecasting models.
-- One enrollment row per client per program-stay is assumed (HMIS-style extract);
-  multi-table exports would need flattening first.
+- One enrollment row per client per program-stay is assumed (HMIS-style extract); use
+  `merge-datasets` to flatten one-to-one related exports first.
 - Live AI calls require a provider key (Anthropic, OpenAI, or Ollama); the AI path is
   tested against fake providers, while the deterministic non-AI mode is the fully tested
   default.
 
 ## Roadmap
 
-- Equity analysis: outcome rates by demographic, with small-sample suppression
 - Returns to service across reporting periods
-- Scheduled audits with email summaries
 - Funder submission-format validation (HMIS CSV and similar)
 
 ---

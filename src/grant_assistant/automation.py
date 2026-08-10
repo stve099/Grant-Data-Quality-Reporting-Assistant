@@ -1,0 +1,134 @@
+"""One-shot scheduled audit workflow and optional SMTP notification.
+
+The application intentionally does not run its own long-lived scheduler. Operators invoke
+``scheduled-audit`` from Windows Task Scheduler, cron, or their existing orchestrator; each
+invocation audits, records history, writes a report, and can send one summary email.
+"""
+
+from __future__ import annotations
+
+import os
+import smtplib
+import ssl
+from dataclasses import dataclass
+from email.message import EmailMessage
+from pathlib import Path
+
+from grant_assistant.analytics import AnalyticsResult
+from grant_assistant.configuration import GrantProfile
+from grant_assistant.history import record_run
+from grant_assistant.models import AuditResult
+from grant_assistant.reporting import build_report_data, write_html_report
+from grant_assistant.workflow import PipelineResult, run_pipeline
+
+
+@dataclass(frozen=True)
+class ScheduledAuditResult:
+    """Artifacts and status produced by one scheduler invocation."""
+
+    pipeline: PipelineResult
+    run_id: int
+    report_path: Path
+    email_sent: bool
+
+
+def build_audit_email(
+    profile: GrantProfile,
+    audit: AuditResult,
+    analytics: AnalyticsResult,
+    source: str,
+) -> EmailMessage:
+    """Build the plain-text summary sent after an automated run."""
+    ready = not audit.blocking_issues
+    below_target = [measure.name for measure in analytics.measures if measure.met is False]
+    lines = [
+        f"Grant: {profile.grant_name}",
+        f"Source: {source}",
+        f"Data quality score: {audit.overall_score:.1f} ({audit.grade})",
+        f"Findings: {audit.total_findings}",
+        f"Blocking issue types: {len(audit.blocking_issues)}",
+        f"Ready for submission: {'yes' if ready else 'no'}",
+        f"Measures below target: {', '.join(below_target) if below_target else 'none'}",
+    ]
+    message = EmailMessage()
+    message["Subject"] = (
+        f"{profile.grant_name} scheduled audit: {audit.overall_score:.1f} {audit.grade}"
+    )
+    message.set_content("\n".join(lines) + "\n")
+    return message
+
+
+def send_audit_email(
+    message: EmailMessage,
+    recipients: list[str],
+    *,
+    host: str,
+    port: int = 587,
+    username: str = "",
+    password: str = "",
+    sender: str,
+    use_tls: bool = True,
+) -> None:
+    """Send one summary through an operator-supplied SMTP relay."""
+    if not recipients:
+        raise ValueError("At least one email recipient is required.")
+    if username and not use_tls:
+        raise ValueError("SMTP credentials require TLS.")
+    message["From"] = sender
+    message["To"] = ", ".join(recipients)
+    with smtplib.SMTP(host, port, timeout=30) as client:
+        if use_tls:
+            client.starttls(context=ssl.create_default_context())
+        if username:
+            client.login(username, password)
+        client.send_message(message)
+
+
+def run_scheduled_audit(
+    data_file: str | Path,
+    profile: str,
+    *,
+    output_dir: str | Path = "output/scheduled",
+    db_path: str | Path = "output/history.db",
+    label: str = "scheduled",
+    recipients: list[str] | None = None,
+    config_dir: str | Path | None = None,
+) -> ScheduledAuditResult:
+    """Run, persist, report, and optionally notify for one scheduled invocation."""
+    result = run_pipeline(data_file, profile, config_dir)
+    run_id = record_run(
+        result.profile,
+        result.audit,
+        result.analytics,
+        db_path,
+        label=label,
+        source=str(data_file),
+    )
+    output = Path(output_dir)
+    report_path = output / f"{result.profile.profile_id}-run-{run_id}.html"
+    report = build_report_data(result.analytics, result.audit, result.profile)
+    write_html_report(report, report_path, offline_charts=True)
+
+    email_sent = False
+    if recipients:
+        host = os.environ.get("GRANT_ASSISTANT_SMTP_HOST", "").strip()
+        sender = os.environ.get("GRANT_ASSISTANT_SMTP_FROM", "").strip()
+        if not host or not sender:
+            raise ValueError(
+                "Email recipients were supplied, but GRANT_ASSISTANT_SMTP_HOST and "
+                "GRANT_ASSISTANT_SMTP_FROM are not configured."
+            )
+        message = build_audit_email(result.profile, result.audit, result.analytics, str(data_file))
+        send_audit_email(
+            message,
+            recipients,
+            host=host,
+            port=int(os.environ.get("GRANT_ASSISTANT_SMTP_PORT", "587")),
+            username=os.environ.get("GRANT_ASSISTANT_SMTP_USERNAME", ""),
+            password=os.environ.get("GRANT_ASSISTANT_SMTP_PASSWORD", ""),
+            sender=sender,
+            use_tls=os.environ.get("GRANT_ASSISTANT_SMTP_TLS", "true").casefold() != "false",
+        )
+        email_sent = True
+
+    return ScheduledAuditResult(result, run_id, report_path, email_sent)

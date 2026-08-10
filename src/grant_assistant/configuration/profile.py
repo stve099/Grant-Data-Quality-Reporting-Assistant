@@ -85,30 +85,47 @@ class PerformanceMeasure(BaseModel):
     description: str = ""
 
 
+REPORT_SECTION_NAMES = (
+    "executive_summary",
+    "data_quality",
+    "population",
+    "demographics",
+    "enrollment",
+    "outcomes",
+    "income",
+    "followups",
+    "measures",
+    "programs",
+    "findings",
+    "recommendations",
+    "methodology",
+    "limitations",
+    "appendix",
+)
+
+
 class ReportConfig(BaseModel):
     """Report generation settings."""
 
     title: str = "Grant Outcome Report"
     prepared_by: str = "Program Data Team"
-    sections: list[str] = Field(
-        default_factory=lambda: [
-            "executive_summary",
-            "data_quality",
-            "population",
-            "demographics",
-            "enrollment",
-            "outcomes",
-            "income",
-            "followups",
-            "measures",
-            "programs",
-            "findings",
-            "recommendations",
-            "methodology",
-            "limitations",
-            "appendix",
-        ]
+    brand_color: str = Field(default="#2a78d6", pattern=r"^#[0-9A-Fa-f]{6}$")
+    brand_dark_color: str = Field(default="#1c5cab", pattern=r"^#[0-9A-Fa-f]{6}$")
+    logo_path: str | None = Field(
+        default=None,
+        description="Optional local PNG/JPEG logo path for report renderers.",
     )
+    sections: list[str] = Field(default_factory=lambda: list(REPORT_SECTION_NAMES))
+
+    @field_validator("sections")
+    @classmethod
+    def check_sections(cls, sections: list[str]) -> list[str]:
+        unknown = sorted(set(sections) - set(REPORT_SECTION_NAMES))
+        if unknown:
+            raise ValueError(f"unknown report sections: {unknown}")
+        if len(sections) != len(set(sections)):
+            raise ValueError("duplicate report sections are not allowed")
+        return sections
 
 
 class GrantProfile(BaseModel):
@@ -207,6 +224,17 @@ class GrantProfile(BaseModel):
         names = [p.name for p in self.programs]
         if len(names) != len(set(names)):
             raise ValueError(f"duplicate program names in profile: {names}")
+        labels: dict[str, str] = {}
+        for program in self.programs:
+            for label in [program.name, *program.aliases]:
+                normalized = label.strip().casefold()
+                owner = labels.get(normalized)
+                if owner is not None and owner != program.name:
+                    raise ValueError(
+                        f"program alias {label!r} belongs to more than one program: "
+                        f"{owner!r} and {program.name!r}"
+                    )
+                labels[normalized] = program.name
         bad_cats = set(self.successful_exit_categories) - set(self.exit_destination_categories)
         if bad_cats:
             raise ValueError(

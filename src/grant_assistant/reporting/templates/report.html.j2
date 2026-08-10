@@ -13,7 +13,7 @@
   :root {
     /* Tokens from docs/design_system.md */
     --ink: #0b0b0b; --muted: #52514e; --line: #e1e0d9;
-    --brand: #2a78d6; --brand-dark: #1c5cab; --good: #0ca30c; --bad: #d03b3b;
+    --brand: {{ r.profile.report.brand_color }}; --brand-dark: {{ r.profile.report.brand_dark_color }}; --good: #0ca30c; --bad: #d03b3b;
     --bg-soft: #f9f9f7;
   }
   * { box-sizing: border-box; }
@@ -83,6 +83,7 @@
 
 <div class="cover">
   <div class="cover-inner">
+    {% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Organization logo" style="max-height: 72px; max-width: 240px; margin-bottom: 24px;">{% endif %}
     <h1>{{ r.title }}</h1>
     <div class="grant">{{ r.profile.grant_name }}{% if r.profile.grantor %} · {{ r.profile.grantor }}{% endif %}</div>
     <div class="meta">
@@ -105,10 +106,12 @@
   {% endfor %}
 </table>
 
+{% if r.includes("executive_summary") %}
 <h2>Executive Summary</h2>
 <p>{{ r.executive_summary }}</p>
+{% endif %}
 
-{% if r.audit %}
+{% if r.audit and r.includes("data_quality") %}
 <h2>Data Quality Statement</h2>
 <p>{{ r.audit.executive_summary() }}</p>
 <div class="kpis">
@@ -125,6 +128,7 @@
 {% if charts.dq_severity %}<div class="chart">{{ charts.dq_severity }}</div>{% endif %}
 {% endif %}
 
+{% if r.includes("population") %}
 <h2>Population Served</h2>
 <div class="kpis">
   <div class="kpi"><div class="v">{{ a.total_enrollments }}</div><div class="l">Enrollments</div></div>
@@ -134,7 +138,9 @@
   <div class="kpi"><div class="v">{{ a.total_children }}</div><div class="l">Children</div></div>
   <div class="kpi"><div class="v">{{ a.active_enrollments }}</div><div class="l">Active enrollments</div></div>
 </div>
+{% endif %}
 
+{% if r.includes("demographics") %}
 <h2>Demographic Summary</h2>
 {% for label, rows in r.demographic_tables() %}
 <h3>{{ label }}</h3>
@@ -144,7 +150,9 @@
 </table>
 {% endfor %}
 {% if charts.age_groups %}<div class="chart">{{ charts.age_groups }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("enrollment") %}
 <h2>Enrollment &amp; Exit Metrics</h2>
 <div class="kpis">
   <div class="kpi"><div class="v">{{ a.total_exits }}</div><div class="l">Total exits</div></div>
@@ -155,7 +163,9 @@
   <div class="kpi"><div class="v">{{ a.permanent_housing_rate if a.permanent_housing_rate is not none else "n/a" }}{% if a.permanent_housing_rate is not none %}%{% endif %}</div><div class="l">Permanent housing rate</div></div>
 </div>
 {% if charts.enrollment_trends %}<div class="chart">{{ charts.enrollment_trends }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("outcomes") %}
 <h2>Housing Outcomes</h2>
 <table>
   <tr><th>Exit destination</th><th class="num">Exits</th></tr>
@@ -164,7 +174,9 @@
   {% endfor %}
 </table>
 {% if charts.exit_destinations %}<div class="chart">{{ charts.exit_destinations }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("income") %}
 <h2>Income Outcomes</h2>
 <div class="kpis">
   <div class="kpi"><div class="v">{{ "$%s"|format("{:,.0f}".format(a.avg_entry_income)) if a.avg_entry_income is not none else "n/a" }}</div><div class="l">Avg entry income</div></div>
@@ -174,7 +186,9 @@
 </div>
 <p>Income change is measured across {{ a.n_income_pairs }} exit(s) with valid entry and exit income.</p>
 {% if charts.income_change %}<div class="chart">{{ charts.income_change }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("followups") %}
 <h2>Follow-Up Outcomes</h2>
 <table>
   <tr><th>Milestone</th><th class="num">Due</th><th class="num">Completed</th><th class="num">Overdue</th><th class="num">Completion rate</th></tr>
@@ -183,7 +197,9 @@
   {% endfor %}
 </table>
 {% if charts.followups %}<div class="chart">{{ charts.followups }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("measures") %}
 <h2>Performance Measures</h2>
 <table>
   <tr><th>Measure</th><th class="num">Target</th><th class="num">Actual</th><th>Status</th></tr>
@@ -197,7 +213,9 @@
   {% endfor %}
 </table>
 {% if charts.goal_vs_actual %}<div class="chart">{{ charts.goal_vs_actual }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("programs") %}
 <h2>Program Comparison</h2>
 <table>
   <tr><th>Program</th><th class="num">Enrollments</th><th class="num">Active</th><th class="num">Exits</th><th class="num">Successful exit rate</th><th class="num">Permanent housing rate</th><th class="num">Avg income change</th></tr>
@@ -215,7 +233,9 @@
 </table>
 {% if charts.program_comparison %}<div class="chart">{{ charts.program_comparison }}</div>{% endif %}
 {% if charts.outcome_rates %}<div class="chart">{{ charts.outcome_rates }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("findings") %}
 <h2>Key Findings</h2>
 <ul>{% for item in r.insights.key_findings %}<li>{{ item }}</li>{% endfor %}
 {% for item in r.insights.notable_trends %}<li>{{ item }}</li>{% endfor %}</ul>
@@ -224,10 +244,14 @@
 <ul>{% for item in r.insights.program_concerns %}<li>{{ item }}</li>{% endfor %}
 {% for item in r.insights.data_quality_risks %}<li>{{ item }}</li>{% endfor %}
 {% for item in r.insights.anomalies %}<li>{{ item }}</li>{% endfor %}</ul>
+{% endif %}
 
+{% if r.includes("recommendations") %}
 <h2>Recommended Actions</h2>
 <ul>{% for item in r.insights.recommended_actions %}<li>{{ item }}</li>{% endfor %}</ul>
+{% endif %}
 
+{% if r.includes("methodology") %}
 <h2>Methodology</h2>
 <p>All metrics are calculated deterministically from the uploaded data extract using the
 "{{ r.profile.profile_id }}" grant profile: field mappings translate source columns to a
@@ -236,10 +260,14 @@ before analysis; outcome categories and successful-exit definitions come from th
 exit destination mappings; follow-up due dates are derived from exit dates plus the
 configured schedule. AI narrative (when enabled) is generated strictly from these
 pre-calculated metrics and never performs its own arithmetic.</p>
+{% endif %}
 
+{% if r.includes("limitations") %}
 <h2>Data Limitations</h2>
 <ul>{% for item in r.data_limitations() %}<li>{{ item }}</li>{% endfor %}</ul>
+{% endif %}
 
+{% if r.includes("appendix") %}
 <h2>Appendix: Measure Definitions</h2>
 <table>
   <tr><th>Measure</th><th>Definition</th></tr>
@@ -247,6 +275,7 @@ pre-calculated metrics and never performs its own arithmetic.</p>
   <tr><td>{{ name }}</td><td>{{ definition }}</td></tr>
   {% endfor %}
 </table>
+{% endif %}
 
 <div class="footer">
   Generated by Grant Data Quality &amp; Reporting Assistant · {{ r.generated_at.strftime("%Y-%m-%d %H:%M") }} ·

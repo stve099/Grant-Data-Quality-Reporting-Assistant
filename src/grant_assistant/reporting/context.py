@@ -54,6 +54,10 @@ class ReportData:
     def period_label(self) -> str:
         return self.profile.reporting_period.label
 
+    def includes(self, section: str) -> bool:
+        """Whether the profile selected a report section."""
+        return section in self.profile.report.sections
+
     def measure_definitions(self) -> list[tuple[str, str]]:
         """(measure name, definition) pairs for the report appendix."""
         out: list[tuple[str, str]] = []

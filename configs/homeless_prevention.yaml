@@ -189,7 +189,7 @@ max_age: 110
 
 # Stricter documentation posture than the other two profiles: missing
 # demographic and entry-income fields are medium, not low, because this
-# funder reports on equity and financial precarity.
+# funder emphasizes demographic reporting and financial precarity.
 severity_overrides:
   DQ-005: medium
   DQ-002: medium

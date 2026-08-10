@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+This pass implements the adoption improvements identified in the repository review: easier
+maintenance, safer provider failures, branded reports, relational imports,
+and unattended audits.
+
+### Added
+
+- **Report branding and real section selection.** Profiles can set two validated brand colors
+  and an optional local PNG/JPEG logo. The existing `report.sections` setting now controls the
+  full HTML report instead of being ignored; unknown and duplicate section names are rejected.
+- **Relational extract flattening.** `merge-datasets` safely adds columns from one-row-per-key
+  related CSV/Excel files, normalizes join-key whitespace, rejects missing or duplicate related
+  keys, and preserves primary-file values.
+- **Scheduler-safe audit runs.** `scheduled-audit` performs one audit, records history, writes
+  an offline HTML report, and can send a plain-text SMTP summary. Windows Task Scheduler, cron,
+  or an existing orchestrator controls timing; the application does not run a hidden daemon.
+  SMTP STARTTLS verifies server certificates, and credentials are rejected when TLS is disabled.
+- **Async provider adapter and failure taxonomy.** Async callers can use `complete_async`
+  without blocking their event loop. Provider failures retain stable authentication, rate
+  limit, timeout, connection, invalid-request, and provider categories plus retryability.
+- **Adversarial acceptance tests** cover related-file duplicates, cross-program alias
+  collisions, report branding/section validation, command registration, provider HTTP failures,
+  and verified-TLS automated-audit summaries.
+
+### Changed
+- **The oversized interface and analytics modules are split by responsibility.** Streamlit
+  setup/router, five focused page groups, and session state now live separately. Typer commands
+  are grouped into audit, reporting, comparison/evaluation, operations, ingestion, and automation
+  modules. Analytics models, calculations, and tabular exports are also separate behind the
+  existing compatibility import path. User-facing behavior and command names are unchanged.
+- **Program aliases must be unambiguous.** Profile validation rejects a case-insensitive alias
+  or program name assigned to more than one program instead of silently picking one.
+- **The Windows console regression job now forces and verifies cp1252.** Redirected output on a
+  Windows runner may otherwise use UTF-8 and fail to exercise the codec that caused the original
+  crash.
+
+### Fixed
+- **The optional-PDF CLI test no longer depends on Playwright being installed.** It now
+  deterministically simulates an unavailable PDF backend and verifies that `--format all`
+  warns while continuing to generate the other report formats.
+
 ## 1.9.2 — 2026-08-10
 
 A coverage-driven hardening pass on the PII pre-flight scanner and the CI

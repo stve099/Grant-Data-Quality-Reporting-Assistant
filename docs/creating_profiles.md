@@ -159,7 +159,16 @@ age_group_bounds: [18, 25, 35, 45, 55, 62]   # upper bounds; a final 62+ band is
 report:
   title: My Grant — Annual Outcome Report
   prepared_by: Data Team
+  brand_color: "#2a78d6"
+  brand_dark_color: "#1c5cab"
+  logo_path: assets/logo.png  # optional local PNG/JPEG, maximum 2 MB
+  sections: [executive_summary, data_quality, population, demographics, enrollment,
+             outcomes, income, followups, measures, programs, findings, recommendations,
+             methodology, limitations, appendix]
 ```
+
+The `sections` list controls which full-report sections render; omitted sections are not
+generated.
 
 ## Tips
 

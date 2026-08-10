@@ -22,7 +22,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+from asyncio import to_thread
 from collections.abc import Callable, Iterator
+from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -63,8 +65,75 @@ DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 OLLAMA_DUMMY_KEY = "ollama"
 
 
+class AIProviderFailure(StrEnum):
+    """Stable failure categories shared across provider SDKs."""
+
+    AUTHENTICATION = "authentication"
+    RATE_LIMIT = "rate_limit"
+    TIMEOUT = "timeout"
+    CONNECTION = "connection"
+    INVALID_REQUEST = "invalid_request"
+    PROVIDER = "provider"
+
+
 class AIProviderError(Exception):
-    """Raised when an AI provider call fails or is misconfigured."""
+    """Provider failure with a stable category and retryability signal."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure: AIProviderFailure = AIProviderFailure.PROVIDER,
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.failure = failure
+        self.retryable = retryable
+
+    @classmethod
+    def from_exception(
+        cls,
+        exc: Exception,
+        *,
+        provider: str,
+        operation: str,
+    ) -> AIProviderError:
+        """Translate Anthropic/OpenAI/stdlib errors without importing optional SDK types."""
+        name = type(exc).__name__.casefold()
+        status_code = getattr(exc, "status_code", None)
+        if isinstance(exc, TimeoutError) or "timeout" in name or status_code == 408:
+            failure = AIProviderFailure.TIMEOUT
+            detail = "timed out"
+            retryable = True
+        elif "authentication" in name or "permissiondenied" in name or status_code in {401, 403}:
+            failure = AIProviderFailure.AUTHENTICATION
+            detail = "authentication failed"
+            retryable = False
+        elif "ratelimit" in name or "rate_limit" in name or status_code == 429:
+            failure = AIProviderFailure.RATE_LIMIT
+            detail = "rate limit reached"
+            retryable = True
+        elif "connection" in name:
+            failure = AIProviderFailure.CONNECTION
+            detail = "connection failed"
+            retryable = True
+        elif (
+            "badrequest" in name
+            or "invalidrequest" in name
+            or (isinstance(status_code, int) and 400 <= status_code < 500)
+        ):
+            failure = AIProviderFailure.INVALID_REQUEST
+            detail = "request was rejected"
+            retryable = False
+        else:
+            failure = AIProviderFailure.PROVIDER
+            detail = "failed"
+            retryable = isinstance(status_code, int) and status_code >= 500
+        return cls(
+            f"{provider} {operation} {detail}: {exc}",
+            failure=failure,
+            retryable=retryable,
+        )
 
 
 @runtime_checkable
@@ -81,6 +150,21 @@ class AIProvider(Protocol):
     ) -> str:
         """Return the model's text response for a system prompt + message history."""
         ...
+
+
+async def complete_async(
+    provider: AIProvider,
+    system: str,
+    messages: list[dict[str, str]],
+    max_tokens: int = 1500,
+) -> str:
+    """Run a provider completion without blocking an async caller's event loop.
+
+    Provider implementations remain synchronous for Streamlit and Typer compatibility.
+    Async applications and concurrent orchestration can use this adapter immediately,
+    including third-party providers that only implement the minimal protocol.
+    """
+    return await to_thread(provider.complete, system, messages, max_tokens)
 
 
 class UsageStats:
@@ -270,7 +354,9 @@ class AnthropicProvider:
                 messages=payload,
             )
         except Exception as exc:
-            raise AIProviderError(f"Claude API call failed: {exc}") from exc
+            raise AIProviderError.from_exception(
+                exc, provider="Claude", operation="API call"
+            ) from exc
         self._record(response)
         parts = [block.text for block in response.content if block.type == "text"]
         return "\n".join(parts).strip()
@@ -294,7 +380,9 @@ class AnthropicProvider:
                 yield from stream.text_stream
                 self._record(stream.get_final_message())
         except Exception as exc:
-            raise AIProviderError(f"Claude streaming call failed: {exc}") from exc
+            raise AIProviderError.from_exception(
+                exc, provider="Claude", operation="streaming call"
+            ) from exc
 
     def complete_thinking(
         self,
@@ -320,7 +408,9 @@ class AnthropicProvider:
                 messages=payload,
             )
         except Exception as exc:
-            raise AIProviderError(f"Claude extended-thinking call failed: {exc}") from exc
+            raise AIProviderError.from_exception(
+                exc, provider="Claude", operation="extended-thinking call"
+            ) from exc
         self._record(response)
         parts = [block.text for block in response.content if block.type == "text"]
         return "\n".join(parts).strip()
@@ -353,7 +443,9 @@ class AnthropicProvider:
                     tools=cached_tools,  # type: ignore[arg-type]
                 )
             except Exception as exc:
-                raise AIProviderError(f"Claude API call failed: {exc}") from exc
+                raise AIProviderError.from_exception(
+                    exc, provider="Claude", operation="API call"
+                ) from exc
             self._record(response)
             if response.stop_reason != "tool_use":
                 parts = [b.text for b in response.content if b.type == "text"]
@@ -497,7 +589,9 @@ class OpenAICompatibleProvider:
                 messages=self._full_messages(system, messages),
             )
         except Exception as exc:
-            raise AIProviderError(f"{self.name} API call failed: {exc}") from exc
+            raise AIProviderError.from_exception(
+                exc, provider=self.name, operation="API call"
+            ) from exc
         self._record(response)
         return (response.choices[0].message.content or "").strip()
 
@@ -526,7 +620,9 @@ class OpenAICompatibleProvider:
                 if delta:
                     yield delta
         except Exception as exc:
-            raise AIProviderError(f"{self.name} streaming call failed: {exc}") from exc
+            raise AIProviderError.from_exception(
+                exc, provider=self.name, operation="streaming call"
+            ) from exc
 
     def complete_with_tools(
         self,
@@ -556,7 +652,9 @@ class OpenAICompatibleProvider:
                     tools=openai_tools,
                 )
             except Exception as exc:
-                raise AIProviderError(f"{self.name} API call failed: {exc}") from exc
+                raise AIProviderError.from_exception(
+                    exc, provider=self.name, operation="API call"
+                ) from exc
             self._record(response)
             msg = response.choices[0].message
             tool_calls = msg.tool_calls or []

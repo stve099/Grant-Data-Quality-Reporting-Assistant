@@ -590,36 +590,32 @@ def test_report_rejects_an_unknown_template(tmp_path):
     assert "--template must be one of" in result.output
 
 
-def test_report_pdf_only_warns_when_backend_is_missing(tmp_path):
+def test_report_all_warns_when_pdf_backend_is_missing(tmp_path, monkeypatch):
     """When --format is all, a missing PDF backend is a warning rather than an error."""
-    import sys
+    from grant_assistant.reporting import PdfBackendError
 
-    # Hide playwright so the import-time backend probe fails, forcing PdfBackendError.
-    real_path = sys.path.copy()
-    # Remove site-packages from path so playwright cannot be imported.
-    sys.path = [p for p in sys.path if "site-packages" not in p]
-    try:
-        # Re-import the reporting module to hit the optional-import path.
-        # We cannot unload modules easily, so instead run report --format pdf
-        # knowing playwright is in fact installed and the test will cover
-        # the success branch. The warning branch is covered by test_pdf_report.py.
-        result = runner.invoke(
-            app,
-            [
-                "report",
-                str(FLAWED),
-                "--format",
-                "pdf",
-                "--config-dir",
-                str(CONFIG_DIR),
-                "--output",
-                str(tmp_path),
-            ],
-        )
-        assert result.exit_code == 0
-        assert (tmp_path / "grant_report.pdf").exists()
-    finally:
-        sys.path = real_path
+    def unavailable(*args, **kwargs):
+        raise PdfBackendError("Playwright is not installed")
+
+    monkeypatch.setattr("grant_assistant.reporting.write_pdf_report", unavailable)
+    result = runner.invoke(
+        app,
+        [
+            "report",
+            str(FLAWED),
+            "--format",
+            "all",
+            "--config-dir",
+            str(CONFIG_DIR),
+            "--output",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Skipping PDF" in result.output
+    assert (tmp_path / "grant_report.html").exists()
+    assert not (tmp_path / "grant_report.pdf").exists()
 
 
 def test_batch_fail_under_exits_nonzero(tmp_path):
