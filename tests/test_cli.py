@@ -432,3 +432,113 @@ def test_report_rejects_an_unknown_format(tmp_path):
     result = runner.invoke(app, ["report", str(FLAWED), "--format", "wingdings"])
     assert result.exit_code == 2
     assert "--format must be" in result.output
+
+
+# -- Commands whose bodies shipped but were never executed --------------------
+#
+# `full-run`, the apply path of `apply-corrections`, the `batch --record` branch,
+# and the ranking body of `compare-models` all showed 0 coverage: existing tests
+# touched only an early-return or an error guard. A command that is registered
+# and raises when its body runs is worse than one that is absent.
+
+
+def test_full_run_generates_every_artifact(tmp_path):
+    """full-run is the one-shot pipeline; its whole body was unexercised."""
+    out = tmp_path / "out"
+    result = _run("full-run", str(FLAWED), "--output", str(out), "--config-dir", str(CONFIG_DIR))
+    assert result.exit_code == 0, result.output
+    assert "Generated files" in result.output
+    # No API key (autouse fixture), so the agent runs deterministically and the
+    # audit/analytics/insights sections all print before the files are written.
+    assert "Audit" in result.output and "Analytics" in result.output
+    for name in (
+        "grant_report.html",
+        "grant_report.docx",
+        "audit_workbook.xlsx",
+        "analytics_summary.xlsx",
+    ):
+        assert (out / name).exists(), name
+
+
+def test_apply_corrections_runs_the_apply_path(tmp_path):
+    """A filled-in worksheet must reach the before/after re-audit, not just the no-op."""
+    import pandas as pd
+
+    sheet = tmp_path / "corrections.xlsx"
+    _run(
+        "correction-worksheet", str(FLAWED), "--output", str(sheet), "--config-dir", str(CONFIG_DIR)
+    )
+
+    # Fill one Corrected Value so the command passes the empty-worksheet early
+    # return and runs the apply + re-audit path. The value need not actually
+    # clear the issue -- this is a wiring test; audit correctness is covered
+    # in test_corrections.py.
+    frame = pd.read_excel(sheet, sheet_name="Corrections", dtype=str, keep_default_na=False)
+    assert not frame.empty, "the flawed sample should produce correctable rows"
+    frame.loc[frame.index[0], "Corrected Value"] = "Permanent housing"
+    with pd.ExcelWriter(sheet, engine="openpyxl") as writer:
+        frame.to_excel(writer, sheet_name="Corrections", index=False)
+
+    corrected = tmp_path / "corrected.csv"
+    result = _run(
+        "apply-corrections",
+        str(FLAWED),
+        str(sheet),
+        "--output",
+        str(corrected),
+        "--config-dir",
+        str(CONFIG_DIR),
+    )
+    assert result.exit_code == 0, result.output
+    assert "correction(s) applied" in result.output
+    assert "Before and after" in result.output
+    assert corrected.exists()
+
+
+def test_batch_records_each_file_to_history(tmp_path):
+    """--record writes every succeeded file to a history db; the branch was unexercised."""
+    import shutil
+
+    folder = tmp_path / "extracts"
+    folder.mkdir()
+    shutil.copy(CLEAN, folder / "good.csv")
+    db = tmp_path / "history.db"
+
+    result = _run("batch", str(folder), "--record", str(db), "--config-dir", str(CONFIG_DIR))
+    assert result.exit_code == 0, result.output
+    assert "Recorded 1 run(s)" in result.output
+    assert db.exists()
+
+
+def test_compare_models_ranks_and_writes_markdown(tmp_path, monkeypatch):
+    """The ranking body needs a provider; fake compare_models so it runs without a key."""
+    from grant_assistant.evals.model_comparison import ComparisonResult, ModelResult
+
+    def fake_compare(models, agent_factory, cases=None, client_ids=None, runs=1):
+        return ComparisonResult(
+            results=[
+                ModelResult(model="alpha", pass_rates=[100.0, 100.0], total_tokens=500),
+                ModelResult(model="beta", pass_rates=[80.0], total_tokens=300),
+                ModelResult(model="gamma", error="No AI provider configured — set a key first."),
+            ],
+            runs_per_model=runs,
+        )
+
+    monkeypatch.setattr("grant_assistant.evals.model_comparison.compare_models", fake_compare)
+
+    out = tmp_path / "cmp.md"
+    result = _run(
+        "compare-models",
+        "alpha,beta,gamma",
+        str(FLAWED),
+        "--output",
+        str(out),
+        "--config-dir",
+        str(CONFIG_DIR),
+    )
+    assert result.exit_code == 0, result.output
+    assert "Best: alpha" in result.output
+    # The failed model is reported, not silently dropped.
+    assert "gamma" in result.output and "failed" in result.output
+    assert out.exists()
+    assert "# Model comparison" in out.read_text(encoding="utf-8")
