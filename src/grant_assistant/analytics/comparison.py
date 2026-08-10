@@ -155,7 +155,7 @@ def _narrate(comparison: ComparisonResult) -> list[str]:
         lines.append(
             "Improved vs. prior period: "
             + "; ".join(
-                f"{d.label} {d.format_value(d.prior)} → {d.format_value(d.current)}"
+                f"{d.label} {d.format_value(d.prior)} -> {d.format_value(d.current)}"
                 for d in improved
             )
             + "."
@@ -164,7 +164,7 @@ def _narrate(comparison: ComparisonResult) -> list[str]:
         lines.append(
             "Declined vs. prior period: "
             + "; ".join(
-                f"{d.label} {d.format_value(d.prior)} → {d.format_value(d.current)}"
+                f"{d.label} {d.format_value(d.prior)} -> {d.format_value(d.current)}"
                 for d in declined
             )
             + "."
@@ -178,7 +178,7 @@ def _narrate(comparison: ComparisonResult) -> list[str]:
         caution = " (small sample — interpret with caution)" if p.small_sample else ""
         lines.append(
             f"{p.program}: successful-exit rate {direction} {abs(p.delta or 0):.1f} points "
-            f"({p.prior_rate}% → {p.current_rate}%){caution}."
+            f"({p.prior_rate}% -> {p.current_rate}%){caution}."
         )
     lines.append(
         "Period differences are associations, not causal effects; intake mix, seasonality, "

@@ -418,12 +418,16 @@ def compare(
 
     _echo_header(f"Period comparison — {current_file.name} vs {prior_file.name}")
     for d in comparison.headline:
-        arrow = "→"
+        # ASCII arrows: the Unicode arrows (U+2192/2191/2193) crash on a Windows
+        # cp1252 console (UnicodeEncodeError), and the CliRunner used in tests
+        # never hits that codec so the bug was invisible. Color still signals
+        # improved/declined and the pct-change is printed alongside.
+        arrow = "~"
         color = typer.colors.WHITE
         if d.improved is True:
-            arrow, color = "↑", typer.colors.GREEN
+            arrow, color = "^", typer.colors.GREEN
         elif d.improved is False:
-            arrow, color = "↓", typer.colors.RED
+            arrow, color = "v", typer.colors.RED
         typer.secho(
             f"{d.label:<34} {d.format_value(d.prior):>12}  {arrow}  "
             f"{d.format_value(d.current):>12}"

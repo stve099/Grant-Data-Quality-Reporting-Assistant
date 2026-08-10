@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.8.1 — 2026-08-10
+
+A Windows-only crash in `compare`, found by running every shipped CLI surface
+on the platform it ships to instead of the in-memory test runner.
+
+### Fixed
+- **`compare` no longer crashes on a Windows console.** The headline and
+  narrative used the Unicode arrows → ↑ ↓ (U+2192/2191/2193), which the
+  Windows cp1252 codec cannot encode — `compare` died with
+  `UnicodeEncodeError` partway through printing. They are now ASCII (`^`, `v`,
+  `~`; narrative uses `->`), matching the ASCII `->` the record-diff section
+  already used. Color and the printed percent change still convey direction.
+  The bug was invisible to tests because Typer's `CliRunner` captures stdout
+  in memory as UTF-8 and never touches the cp1252 codec, so a regression test
+  now asserts the captured output encodes to cp1252 — the actual contract a
+  Windows console enforces.
+
 ## 1.8.0 — 2026-08-10
 
 A new audit rule for a class of error no existing rule could catch, found by a

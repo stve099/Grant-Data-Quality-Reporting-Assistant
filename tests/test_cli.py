@@ -374,6 +374,31 @@ def test_compare_command_reports_deltas(tmp_path):
     assert result.exit_code == 0
 
 
+def test_compare_output_is_windows_console_safe(tmp_path):
+    # CliRunner captures stdout in memory as UTF-8, so it hides the
+    # UnicodeEncodeError a real Windows cp1252 console raises on non-Latin-1
+    # glyphs (the → used to live in the headline and narrative). Asserting the
+    # captured output encodes to cp1252 is the only way to catch that class of
+    # bug from a test runner that never touches the real codec.
+    out = tmp_path / "record_diff.csv"
+    result = runner.invoke(
+        app,
+        [
+            "compare",
+            str(FLAWED),
+            str(CLEAN),
+            "--records",
+            "--records-output",
+            str(out),
+            "--config-dir",
+            str(CONFIG_DIR),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    result.output.encode("cp1252")  # raises UnicodeEncodeError if a glyph slipped in
+    assert out.exists()
+
+
 def test_eval_runs_deterministically(tmp_path):
     result = _run(
         "eval", str(FLAWED), "--no-ai", "--output", str(tmp_path), "--config-dir", str(CONFIG_DIR)
