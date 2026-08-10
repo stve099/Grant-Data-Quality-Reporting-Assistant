@@ -90,6 +90,7 @@ uv run grant-assistant report  sample_data/housing_program_flawed.csv --format p
 uv run grant-assistant ask     sample_data/housing_program_flawed.csv "Which program had the best outcomes?"
 uv run grant-assistant insights sample_data/housing_program_flawed.csv --profile housing_stability
 uv run grant-assistant compare current_period.csv prior_period.csv --profile housing_stability
+uv run grant-assistant compare current.csv prior.csv --records   # which records moved
 
 # Executive brief instead of the full report
 uv run grant-assistant report sample_data/housing_program_flawed.csv --template concise
@@ -102,10 +103,16 @@ uv run grant-assistant eval --runs 3        # a hosted model is not reproducible
 uv run grant-assistant correction-worksheet sample_data/housing_program_flawed.csv
 uv run grant-assistant apply-corrections sample_data/housing_program_flawed.csv output/corrections.xlsx
 
-# Many files at once, and quality over time
+# Many files at once
 uv run grant-assistant batch ./extracts --pattern "2025-*.csv"
+
+# Quality over time: record each run, then chart the trend
 uv run grant-assistant record-run sample_data/housing_program_flawed.csv --label "Q1"
-uv run grant-assistant history --metric permanent_housing_rate
+uv run grant-assistant history --metric permanent_housing_rate --chart output/trend.html
+
+# Gate a pipeline on the score, not just on blocking issues
+uv run grant-assistant audit extract.csv --fail-under 90
+uv run grant-assistant batch ./extracts --fail-under 85
 
 # The file specification to send to whoever produces the extract
 uv run grant-assistant data-dictionary --output docs/spec.html
@@ -122,7 +129,9 @@ uv run grant-assistant validate-config
 uv run grant-assistant rules
 ```
 
-`audit` exits non-zero when blocking issues are present, so it can gate a data pipeline.
+`audit` exits non-zero when blocking issues are present, or when `--fail-under` is set and the
+score falls below it, so it can gate a data pipeline. `batch` does the same, and also fails when
+any file in the folder could not be processed.
 
 ---
 
@@ -401,7 +410,7 @@ Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISH
 ## Roadmap
 
 - Equity analysis: outcome rates by demographic, with small-sample suppression
-- Length-of-stay metrics
+- Returns to service across reporting periods
 - Scheduled audits with email summaries
 - Funder submission-format validation (HMIS CSV and similar)
 

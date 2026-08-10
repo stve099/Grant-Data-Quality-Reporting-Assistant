@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.6.0 — 2026-08-10
+
+Two standard measures the tool was missing, a way to gate a pipeline on data
+quality, and answers to the question that always follows a period comparison:
+which records actually moved?
+
+### Added
+- **Length of stay** — median and mean days from enrollment to exit, per program
+  and per exit destination, all reachable through `metric_lookup()`. Computed
+  from exits only: an active client has not finished a stay, and counting it as
+  a short one would understate every figure. A negative span is dropped rather
+  than averaged in, because an exit before its enrollment is a finding (DQ-030)
+  and not a length. Destination medians are suppressed below the small-sample
+  threshold that already guards rates.
+- **Target pacing** — `attainment_pct` and `period_elapsed_pct` on each measure,
+  with `on_pace` comparing them. 48% of target at 62% elapsed is behind; the same
+  figure at 20% elapsed is ahead, and a bare met/not-met cannot tell you which.
+  Pacing applies only to "at least" targets — "62% of the way there" is backwards
+  for a target you stay under — and is `None` once the period closes, because
+  after that met/not-met is the answer.
+- **`--fail-under`** on `audit` and `batch`, so a pipeline can gate on the score
+  rather than only on blocking issues.
+- **`history --chart`** renders the recorded score series, optionally with one
+  metric on a second axis. The store has always held this and only ever printed
+  it as a column of numbers. A metric absent from earlier runs leaves a genuine
+  gap rather than being plotted as zero.
+- **`compare --records`** reports which client records changed, not just which
+  totals moved, with a per-field rollup and optional CSV export. Records are
+  matched on client ID, so a re-keyed export reads as full churn — that is the
+  honest report, since pairing rows by position would be a guess. Raw values are
+  compared, so a reformatted date counts as a change: that is a real difference
+  a data manager wants to see.
+
+### Changed
+- `audit/rules.py` (1,005 lines) is now a package of seven category modules with
+  shared helpers; the largest is 273 lines. All 27 rules register exactly as
+  before. **A new category module must be imported in `audit/rules/__init__.py`
+  or its decorators never run and its rules silently do not exist** — documented
+  in `CLAUDE.md` and the `add-audit-rule` skill.
+- `analyze` reports median length of stay and period-elapsed percentage, and
+  marks measures `ON PACE` or `BEHIND PACE` mid-period.
+
+### Fixed
+- A record with a blank client ID became a client named `"nan"` in the record
+  diff — the same `NaN`-stringification trap that empty Excel cells cause.
+
 ## 1.5.2 — 2026-08-07
 
 Test-only release. No behaviour changes; the value is in what is now verified
