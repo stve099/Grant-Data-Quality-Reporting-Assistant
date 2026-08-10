@@ -14,9 +14,9 @@ from grant_assistant.configuration import (
 from tests.conftest import CONFIG_DIR
 
 
-def test_list_profiles_finds_both_examples():
+def test_list_profiles_finds_all_examples():
     profiles = list_profiles(CONFIG_DIR)
-    assert {"housing_stability", "rapid_rehousing"} <= set(profiles)
+    assert {"housing_stability", "rapid_rehousing", "homeless_prevention"} <= set(profiles)
 
 
 def test_load_profile_by_id(profile):

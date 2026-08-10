@@ -291,6 +291,7 @@ Include at least two synthetic example profiles, such as:
 
 - Stable Homes Grant
 - Bridge to Home Grant
+- Safe Nights Prevention Grant
 
 Provide clear documentation for creating additional profiles.
 

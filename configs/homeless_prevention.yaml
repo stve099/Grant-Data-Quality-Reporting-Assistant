@@ -1,0 +1,207 @@
+# Safe Nights Prevention Grant — example reporting profile (synthetic).
+# Demonstrates a third funder view over the same data: a private-foundation
+# prevention/diversion grant with a winter-season reporting period, a single
+# short follow-up, an Emergency-Shelter-scoped diversion measure, exit
+# documentation required up front, and a stricter blocking rule that is not
+# blocking by default (DQ-033, status contradicts exit date).
+
+profile_id: homeless_prevention
+grant_name: Safe Nights Prevention Grant
+grantor: Example United Way
+description: >
+  Six-month prevention and diversion grant funding emergency-shelter diversion
+  and housing stabilization during the winter season. Success is defined as an
+  exit to any stable or temporary housing destination rather than to homelessness
+  or an institution. The funder blocks submission on missing exit destinations
+  and on enrollment status that contradicts the exit date.
+
+reporting_period:
+  start: 2024-10-01
+  end: 2025-03-31
+
+programs:
+  - name: Rapid Re-Housing
+    aliases: ["RRH", "Rapid Rehousing", "Rapid Re-housing Program"]
+    description: Short-term rental assistance and housing-focused case management.
+  - name: Emergency Shelter
+    aliases: ["ES", "Emergency Shelter Program", "Shelter"]
+    description: Immediate low-barrier shelter with diversion and housing navigation.
+  - name: Permanent Supportive Housing
+    aliases: ["PSH", "Perm Supportive Housing"]
+    description: Long-term subsidized housing with intensive supportive services.
+
+field_mappings:
+  "Client ID": client_id
+  "Household ID": household_id
+  "Program Name": program
+  "Entry Date": enrollment_date
+  "Enrollment Status": enrollment_status
+  "Exit Date": exit_date
+  "Exit Destination": exit_destination
+  "Household Size": household_size
+  "Adults in Household": adults
+  "Children in Household": children
+  "Age at Entry": age
+  "Gender": gender
+  "Race": race
+  "Ethnicity": ethnicity
+  "Veteran Status": veteran_status
+  "Disability Status": disability_status
+  "Monthly Income at Entry": entry_income
+  "Monthly Income at Exit": exit_income
+  "Assessment Status": assessment_status
+  "Exit Plan Status": exit_plan_status
+  "3-Month Follow-Up Date": followup_3m_date
+  "6-Month Follow-Up Date": followup_6m_date
+  "12-Month Follow-Up Date": followup_12m_date
+
+required_fields:
+  - client_id
+  - household_id
+  - program
+  - enrollment_date
+  - enrollment_status
+
+controlled_values:
+  enrollment_status: [Active, Exited]
+  gender: [Female, Male, Declined, Unknown]
+  race:
+    - White
+    - Black or African American
+    - Asian
+    - American Indian or Alaska Native
+    - Native Hawaiian or Pacific Islander
+    - Multiple Races
+    - Declined
+  ethnicity: [Hispanic/Latino, Non-Hispanic/Non-Latino, Declined]
+  veteran_status: ["Yes", "No", "Unknown"]
+  disability_status: ["Yes", "No", "Unknown"]
+  assessment_status: [Completed, In Progress, Not Started]
+  exit_plan_status: [Completed, In Progress, Not Started]
+  exit_destination:
+    - Rental by client, no subsidy
+    - Rental by client, with subsidy
+    - Permanent supportive housing
+    - Staying with family, permanent
+    - Homeownership
+    - Staying with family, temporary
+    - Staying with friends, temporary
+    - Transitional housing
+    - Hotel or motel
+    - Hospital
+    - Substance abuse facility
+    - Jail or prison
+    - Emergency shelter
+    - Place not meant for habitation
+    - Other
+    - Deceased
+
+followup_schedule:
+  - key: 3_month
+    label: 3-Month Follow-Up
+    months_after_exit: 3
+    completion_field: followup_3m_date
+    grace_days: 7
+
+exit_destination_categories:
+  permanent_housing:
+    - Rental by client, no subsidy
+    - Rental by client, with subsidy
+    - Permanent supportive housing
+    - Staying with family, permanent
+    - Homeownership
+  temporary_housing:
+    - Staying with family, temporary
+    - Staying with friends, temporary
+    - Transitional housing
+    - Hotel or motel
+  institutional:
+    - Hospital
+    - Substance abuse facility
+    - Jail or prison
+  homeless:
+    - Emergency shelter
+    - Place not meant for habitation
+  other:
+    - Other
+    - Deceased
+
+# Diversion: a successful exit is any stable or temporary housing destination,
+# not only permanent. A shelter intake diverted to temporary housing with a
+# housing plan is a win for this funder, even if permanent placement follows
+# later under a different grant.
+successful_exit_categories: [permanent_housing, temporary_housing]
+
+performance_measures:
+  - id: SN-1
+    name: Successful diversion rate
+    metric: successful_exit_rate
+    target: 70
+    unit: percent
+    direction: at_least
+    description: >
+      Share of exits to any stable or temporary housing destination, the
+      funder's definition of a successful diversion.
+  - id: SN-2
+    name: Permanent housing exit rate
+    metric: permanent_housing_rate
+    target: 45
+    unit: percent
+    direction: at_least
+    description: >
+      Lower bar than a placement grant: permanent housing is one good outcome,
+      but diversion to temporary housing also counts toward SN-1.
+  - id: SN-3
+    name: Households increasing income at exit
+    metric: pct_income_increased
+    target: 35
+    unit: percent
+    direction: at_least
+  - id: SN-4
+    name: Assessment completion rate
+    metric: assessment_completion_rate
+    target: 85
+    unit: percent
+    direction: at_least
+  - id: SN-5
+    name: 3-month follow-up completion rate
+    metric: followup_3_month_completion_rate
+    target: 75
+    unit: percent
+    direction: at_least
+  - id: SN-6
+    name: Emergency Shelter diversion rate (program-scoped)
+    metric: successful_exit_rate
+    target: 55
+    unit: percent
+    direction: at_least
+    program: Emergency Shelter
+    description: >
+      Successful-diversion rate evaluated for the Emergency Shelter program
+      only, measuring front-door diversion at the shelter where the grant
+      concentrates its funding.
+
+demographic_fields: [gender, race, ethnicity, veteran_status, disability_status]
+age_group_bounds: [18, 25, 35, 45, 55, 62]
+income_cap: 80000
+max_household_size: 8
+max_age: 110
+
+# Stricter documentation posture than the other two profiles: missing
+# demographic and entry-income fields are medium, not low, because this
+# funder reports on equity and financial precarity.
+severity_overrides:
+  DQ-005: medium
+  DQ-002: medium
+
+blocking_rules:
+  - DQ-004            # missing exit destination blocks submission
+  - DQ-010            # duplicate enrollments block submission
+  - DQ-030            # impossible date order blocks submission
+  - DQ-033            # status contradicts exit date — not blocking by default,
+                     # elevated here because this funder rejects inconsistent
+                     # exit documentation outright
+
+report:
+  title: Safe Nights Prevention Grant — Winter Season Report
+  prepared_by: Program Data & Evaluation Team

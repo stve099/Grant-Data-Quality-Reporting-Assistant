@@ -175,6 +175,23 @@ def test_blocking_rules_from_profile(rrh_profile):
     assert issue in audit.blocking_issues
 
 
+def test_blocking_rules_can_elevate_a_non_default_rule(hp_profile, profile):
+    # DQ-033 (status contradicts exit date) is registered blocking=False, so a
+    # profile must list it to make it block. homeless_prevention does; the
+    # default profile does not. This is the case where blocking_rules actually
+    # changes behaviour, unlike listing an already-blocking rule.
+    rows = [make_row(VALID_EXITED, enrollment_status="Active")]
+    blocking_audit = audit_source_rows(rows, hp_profile)
+    issue = next(i for i in blocking_audit.issues if i.rule_id == "DQ-033")
+    assert issue.blocking is True
+    assert issue in blocking_audit.blocking_issues
+
+    default_audit = audit_source_rows(rows, profile)
+    default_issue = next(i for i in default_audit.issues if i.rule_id == "DQ-033")
+    assert default_issue.blocking is False
+    assert default_issue not in default_audit.blocking_issues
+
+
 def test_issue_metadata_completeness(profile):
     """Every finding must carry the full metadata contract from the spec."""
     rows = [make_row(client_id=""), dict(VALID_ACTIVE)]

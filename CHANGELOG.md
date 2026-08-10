@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.7.0 — 2026-08-10
+
+A third example grant profile, proving the configuration system generalizes
+beyond two funders without a line of Python.
+
+### Added
+- **Safe Nights Prevention Grant** (`homeless_prevention`) — a private-foundation
+  prevention and diversion view over the same housing data, distinct from the
+  two existing profiles in every dimension the config exposes: a six-month
+  winter-season reporting period (Oct 2024–Mar 2025), a single 3-month
+  follow-up, a diversion success definition (any stable *or* temporary housing
+  destination, not permanent only), an Emergency-Shelter-scoped diversion
+  measure, stricter severity on missing demographic and entry-income fields,
+  and a blocking rule — DQ-033, status contradicts exit date — that is not
+  blocking by default. That last is the meaningful one: `blocking_rules` is
+  additive over the default-blocking set, so listing a rule that is already
+  blocking (as the prior example did) changes nothing. Listing DQ-033 actually
+  elevates it, and a test asserts it blocks under this profile and not under
+  the default.
+
 ## 1.6.1 — 2026-08-10
 
 The chat asked the user to pick how the analyst should answer, and the profile

@@ -124,6 +124,11 @@ def rrh_profile() -> GrantProfile:
 
 
 @pytest.fixture(scope="session")
+def hp_profile() -> GrantProfile:
+    return load_profile("homeless_prevention", CONFIG_DIR)
+
+
+@pytest.fixture(scope="session")
 def clean_df() -> pd.DataFrame:
     return generate_clean_dataset(n_clients=180, seed=11)
 
