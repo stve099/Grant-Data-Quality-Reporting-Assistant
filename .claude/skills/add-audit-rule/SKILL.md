@@ -29,7 +29,13 @@ measure or blocks submission; **medium** affects a breakdown; **low** is complet
 **info** never reduces the score. Set `blocking=True` only when a funder would reject the
 submission.
 
-## 2. Implement it in `src/grant_assistant/audit/rules.py`
+## 2. Implement it in `src/grant_assistant/audit/rules/<category>.py`
+
+Rules live in one module per category — `completeness`, `uniqueness`, `validity`,
+`consistency`, `case_management`, `timeliness`, `statistical`. Shared helpers
+(`_records`, `_issue`, `_exited`, `_s`) come from `audit.rules._helpers`. A new
+category needs a module *and* an import in `audit/rules/__init__.py`; without it
+the decorators never run and the rule silently does not exist.
 
 ```python
 @rule(

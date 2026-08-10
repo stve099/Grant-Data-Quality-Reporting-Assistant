@@ -71,6 +71,16 @@ def audit(
     config_dir: ConfigDirOpt = None,
     output: OutputOpt = Path("output"),
     export: Annotated[bool, typer.Option(help="Write the Excel audit workbook.")] = True,
+    fail_under: Annotated[
+        float | None,
+        typer.Option(
+            "--fail-under",
+            min=0.0,
+            max=100.0,
+            help="Exit non-zero if the data quality score falls below this. "
+            "Lets a pipeline gate on quality, not just on blocking issues.",
+        ),
+    ] = None,
 ) -> None:
     """Run the data quality audit and print a summary."""
     result = _run(data_file, profile, config_dir)
@@ -116,7 +126,15 @@ def audit(
 
         path = write_audit_workbook(a, result.prepared, output / "audit_workbook.xlsx")
         typer.secho(f"\nAudit workbook: {path}", fg=typer.colors.GREEN)
-    if a.blocking_issues:
+
+    below_threshold = fail_under is not None and a.overall_score < fail_under
+    if below_threshold:
+        typer.secho(
+            f"\nScore {a.overall_score:.1f} is below the required {fail_under:.1f}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+    if a.blocking_issues or below_threshold:
         raise typer.Exit(code=1)
 
 
@@ -150,6 +168,14 @@ def analyze(
         f"({an.pct_income_increased}% of households increased)"
     )
     typer.echo(f"Overdue follow-ups:     {an.total_overdue_followups}")
+    if an.median_length_of_stay_days is not None:
+        typer.echo(
+            f"Median length of stay:  {an.median_length_of_stay_days:.0f} days "
+            f"(across {an.n_length_of_stay} completed stays)"
+        )
+    if an.period_elapsed_pct is not None:
+        closed = " — period closed" if an.period_elapsed_pct >= 100 else ""
+        typer.echo(f"Period elapsed:         {an.period_elapsed_pct:.0f}%{closed}")
 
     _echo_header("Programs")
     for p in an.programs:
@@ -168,9 +194,12 @@ def analyze(
             if m.met
             else (typer.colors.RED if m.met is False else typer.colors.YELLOW)
         )
+        pace = ""
+        if m.on_pace is not None:
+            pace = "  ON PACE" if m.on_pace else "  BEHIND PACE"
         typer.secho(
             f"{m.id:<8} {m.name:<48} target {m.target:>8}  actual "
-            f"{m.actual if m.actual is not None else 'n/a':>8}  {status}",
+            f"{m.actual if m.actual is not None else 'n/a':>8}  {status}{pace}",
             fg=color,
         )
 
@@ -363,6 +392,17 @@ def compare(
     prior_file: Annotated[Path, typer.Argument(help="Prior-period CSV or Excel file.")],
     profile: ProfileOpt = "housing_stability",
     config_dir: ConfigDirOpt = None,
+    records: Annotated[
+        bool,
+        typer.Option(
+            "--records/--no-records",
+            help="Also show which client records changed, not just which totals.",
+        ),
+    ] = False,
+    records_output: Annotated[
+        Path | None,
+        typer.Option("--records-output", help="Write the record-level changes to CSV."),
+    ] = None,
 ) -> None:
     """Compare two reporting-period extracts (same profile) and show deltas."""
     from grant_assistant.analytics.comparison import compare_analytics
@@ -393,6 +433,26 @@ def compare(
     _echo_header("Narrative")
     for line in comparison.narrative:
         typer.echo(f"- {line}")
+
+    if records or records_output is not None:
+        from grant_assistant.analytics import diff_records
+
+        diff = diff_records(current.prepared, prior.prepared)
+        _echo_header("Record-level changes")
+        for line in diff.summary_lines():
+            typer.echo(f"  {line}")
+        for change in diff.changed[:15]:
+            typer.echo(
+                f"  {change.client_id:<12} {change.field_name:<24} "
+                f"{change.before or '(blank)'} -> {change.after or '(blank)'}"
+            )
+        if len(diff.changed) > 15:
+            typer.echo(f"  ... and {len(diff.changed) - 15} more")
+
+        if records_output is not None:
+            records_output.parent.mkdir(parents=True, exist_ok=True)
+            diff.to_frame().to_csv(records_output, index=False)
+            typer.secho(f"\nRecord changes: {records_output}", fg=typer.colors.GREEN)
 
 
 @app.command("eval")
@@ -584,6 +644,15 @@ def batch(
     record: Annotated[
         Path | None, typer.Option("--record", help="Also add each file to this history db.")
     ] = None,
+    fail_under: Annotated[
+        float | None,
+        typer.Option(
+            "--fail-under",
+            min=0.0,
+            max=100.0,
+            help="Exit non-zero if the row-weighted score falls below this.",
+        ),
+    ] = None,
 ) -> None:
     """Audit every extract in a folder and roll the results up."""
     from grant_assistant.batch import (
@@ -645,7 +714,15 @@ def batch(
                 )
         typer.secho(f"Recorded {recorded} run(s) to {record}", fg=typer.colors.GREEN)
 
-    if result.failed:
+    score = result.weighted_score
+    below_threshold = fail_under is not None and score is not None and score < fail_under
+    if below_threshold:
+        typer.secho(
+            f"\nWeighted score {score:.1f} is below the required {fail_under:.1f}.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+    if result.failed or below_threshold:
         raise typer.Exit(code=1)
 
 
@@ -701,6 +778,10 @@ def history(
     metric: Annotated[
         str | None, typer.Option("--metric", help="Also chart one metric over time.")
     ] = None,
+    chart: Annotated[
+        Path | None,
+        typer.Option("--chart", help="Write the trend as an HTML chart to this path."),
+    ] = None,
 ) -> None:
     """Show recorded runs and how data quality has moved."""
     from grant_assistant.history import load_history, metric_series, score_trend
@@ -741,6 +822,13 @@ def history(
             _echo_header(metric)
             for when, value in series:
                 typer.echo(f"  {when:%Y-%m-%d}  {value:>12,.1f}")
+
+    if chart is not None:
+        from grant_assistant.analytics.charts import history_trend_chart
+
+        chart.parent.mkdir(parents=True, exist_ok=True)
+        history_trend_chart(entries, metric).write_html(str(chart), include_plotlyjs="cdn")
+        typer.secho(f"\nChart: {chart}", fg=typer.colors.GREEN)
 
 
 @app.command("draft-profile")

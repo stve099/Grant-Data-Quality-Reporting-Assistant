@@ -13,7 +13,7 @@ gates on the light surface (validated with the palette validator).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import plotly.graph_objects as go
 
@@ -336,6 +336,61 @@ def comparison_chart(comparison: ComparisonResult) -> go.Figure:
         height=max(360, 60 * len(names) + 130),
     )
     return _base(fig, "Period-over-Period Comparison")
+
+
+def history_trend_chart(entries: list[Any], metric: str | None = None) -> go.Figure:
+    """Data quality score across recorded runs, optionally with one metric.
+
+    The history store has always held this series but only ever printed it as a
+    column of numbers. A direction is much easier to see than to read, and
+    "is our data quality improving?" is the question a funder asks.
+
+    ``entries`` are :class:`~grant_assistant.history.HistoryEntry`, oldest first
+    as ``load_history`` returns them. Typed loosely to keep charts free of a
+    dependency on the history package.
+    """
+    labels = [e.label or f"{e.recorded_at:%Y-%m-%d}" for e in entries]
+    fig = go.Figure(
+        [
+            go.Scatter(
+                name="Data quality score",
+                x=labels,
+                y=[e.score for e in entries],
+                mode="lines+markers",
+                line={"color": SERIES[0], "width": 3},
+                marker={"size": 9},
+            )
+        ]
+    )
+    if metric:
+        # A metric added to the profile later has no earlier points; plotting
+        # None leaves a genuine gap rather than implying a value of zero.
+        values = [e.metrics.get(metric) for e in entries]
+        if any(v is not None for v in values):
+            fig.add_trace(
+                go.Scatter(
+                    name=metric.replace("_", " ").title(),
+                    x=labels,
+                    y=values,
+                    mode="lines+markers",
+                    line={"color": SERIES[1 % len(SERIES)], "width": 3, "dash": "dot"},
+                    marker={"size": 9},
+                    yaxis="y2",
+                )
+            )
+            fig.update_layout(
+                yaxis2={
+                    "overlaying": "y",
+                    "side": "right",
+                    "showgrid": False,
+                    "title": metric.replace("_", " ").title(),
+                }
+            )
+    fig.update_layout(
+        yaxis={"title": "Score", "range": [0, 105]},
+        height=380,
+    )
+    return _base(fig, "Data Quality Over Time")
 
 
 def standard_chart_set(

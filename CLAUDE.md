@@ -75,7 +75,9 @@ definition, so scanning later would never see it.
 ## Adding things
 
 **An audit rule** — use the `/add-audit-rule` skill. Register with `@rule` in
-`audit/rules.py`, add a targeted test in `tests/test_audit_rules.py`, and if the flawed
+the `audit/rules/` module for its category (a new category needs an import in
+`audit/rules/__init__.py`, or its rules never register), add a targeted test in
+`tests/test_audit_rules.py`, and if the flawed
 sample should demonstrate it, inject it in `datagen/generator.py` and log it to the
 manifest (the manifest test then enforces detection permanently).
 

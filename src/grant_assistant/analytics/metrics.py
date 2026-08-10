@@ -42,6 +42,19 @@ NOT_REPORTED_VALUES = frozenset(
 )
 
 
+def _stay_days(frame: pd.DataFrame) -> pd.Series:
+    """Days from enrollment to exit, for rows where the span is meaningful.
+
+    A negative span means the exit predates the enrollment — an audit finding
+    (DQ-030), not a length of stay — so those rows are dropped rather than
+    allowed to pull a median downward.
+    """
+    entry = frame[schema.ENROLLMENT_DATE]
+    exit_ = frame[schema.EXIT_DATE]
+    span = (exit_ - entry).dt.days
+    return span[span.notna() & (span >= 0)].astype(float)
+
+
 def _rate(numerator: int, denominator: int) -> float | None:
     """Percentage rate, or None when the denominator is zero."""
     if denominator == 0:
@@ -65,6 +78,9 @@ class ProgramMetrics(BaseModel):
     median_income_change: float | None
     n_income_pairs: int
     small_sample: bool
+    #: Median days from enrollment to exit for this program's exited clients.
+    #: None when no exit has both dates recorded.
+    median_length_of_stay_days: float | None = None
 
 
 class FollowUpMetrics(BaseModel):
@@ -93,6 +109,25 @@ class MeasureResult(BaseModel):
     small_sample: bool
     program: str | None = None
     description: str = ""
+    #: Attainment as a percentage of target, alongside how far through the
+    #: period the run falls. Together they answer "are we on pace?" mid-period,
+    #: which a bare met/not-met cannot: 48% of target at 62% elapsed is behind,
+    #: the same figure at 20% elapsed is ahead.
+    attainment_pct: float | None = None
+    period_elapsed_pct: float | None = None
+
+    @property
+    def on_pace(self) -> bool | None:
+        """Whether attainment is keeping up with elapsed time.
+
+        None once met is decided or the period has closed, because pacing is a
+        mid-period question — after the period, met/not-met is the answer.
+        """
+        if self.attainment_pct is None or self.period_elapsed_pct is None:
+            return None
+        if self.period_elapsed_pct >= 100:
+            return None
+        return self.attainment_pct >= self.period_elapsed_pct
 
 
 class AnalyticsResult(BaseModel):
@@ -122,6 +157,20 @@ class AnalyticsResult(BaseModel):
     permanent_housing_rate: float | None
     exit_destination_breakdown: dict[str, int]
     exit_category_breakdown: dict[str, int]
+
+    # Length of stay. None when no exit has both an entry and an exit date;
+    # a stay is never assumed to be zero just because a date is missing.
+    median_length_of_stay_days: float | None = None
+    avg_length_of_stay_days: float | None = None
+    n_length_of_stay: int = 0
+    #: Destination -> median days to that destination. Only destinations with at
+    #: least SMALL_SAMPLE_N exits appear: a median over three stays is noise.
+    median_length_of_stay_by_destination: dict[str, float] = Field(default_factory=dict)
+
+    # Period pacing
+    #: How far through the reporting period ``as_of`` falls, 0-100. Above 100
+    #: when the report is generated after the period closed.
+    period_elapsed_pct: float | None = None
 
     # Income
     n_income_pairs: int
@@ -190,6 +239,9 @@ class AnalyticsResult(BaseModel):
             "assessment_completion_rate": self.assessment_completion_rate,
             "exit_plan_completion_rate": self.exit_plan_completion_rate,
             "month_over_month_enrollment_change": self.month_over_month_enrollment_change,
+            "median_length_of_stay_days": self.median_length_of_stay_days,
+            "avg_length_of_stay_days": self.avg_length_of_stay_days,
+            "period_elapsed_pct": self.period_elapsed_pct,
         }
         for fu in self.followups:
             out[f"followup_{fu.key}_completion_rate"] = fu.completion_rate
@@ -371,6 +423,7 @@ def compute_analytics(
             & (sub_exited[schema.EXIT_INCOME] <= profile.income_cap)
         ]
         sub_changes = (sub_inc[schema.EXIT_INCOME] - sub_inc[schema.ENTRY_INCOME]).astype(float)
+        sub_stay = _stay_days(sub_exited)
         programs.append(
             ProgramMetrics(
                 program=program,
@@ -390,8 +443,34 @@ def compute_analytics(
                 ),
                 n_income_pairs=len(sub_inc),
                 small_sample=len(sub_exited) < SMALL_SAMPLE_N,
+                median_length_of_stay_days=(
+                    round(float(sub_stay.median()), 1) if len(sub_stay) else None
+                ),
             )
         )
+
+    # Length of stay. Computed from exits only: an active client's stay is not
+    # yet a length, and treating "still enrolled" as a short stay would
+    # understate every figure here.
+    stay = _stay_days(exited)
+    stay_by_destination: dict[str, float] = {}
+    if len(stay):
+        dest_series = exited[schema.EXIT_DESTINATION].astype(str).str.strip()
+        for destination, group in exited.groupby(dest_series):
+            group_stay = _stay_days(group)
+            # A median over a handful of stays is noise, so the same
+            # small-sample threshold that guards rates guards this too.
+            if len(group_stay) >= SMALL_SAMPLE_N:
+                stay_by_destination[str(destination)] = round(float(group_stay.median()), 1)
+
+    # How far through the reporting period this run falls. Above 100 once the
+    # period has closed, which is meaningful rather than an error: it says the
+    # figures are final.
+    period_days = (profile.reporting_period.end - profile.reporting_period.start).days
+    elapsed_pct: float | None = None
+    if period_days > 0:
+        elapsed = (as_of - profile.reporting_period.start).days
+        elapsed_pct = round(100.0 * elapsed / period_days, 1)
 
     # Monthly trends.
     enroll_months = df[schema.ENROLLMENT_DATE].dropna().dt.to_period("M")
@@ -426,6 +505,11 @@ def compute_analytics(
         permanent_housing_rate=_rate(permanent, len(exited)),
         exit_destination_breakdown={str(k): int(v) for k, v in dest_counts.items()},
         exit_category_breakdown=cat_counts,
+        median_length_of_stay_days=round(float(stay.median()), 1) if len(stay) else None,
+        avg_length_of_stay_days=round(float(stay.mean()), 1) if len(stay) else None,
+        n_length_of_stay=len(stay),
+        median_length_of_stay_by_destination=stay_by_destination,
+        period_elapsed_pct=elapsed_pct,
         n_income_pairs=n_pairs,
         avg_entry_income=round(float(all_entry.mean()), 2) if len(all_entry) else None,
         avg_exit_income=round(float(all_exit.mean()), 2) if len(all_exit) else None,
@@ -514,6 +598,12 @@ def _evaluate_measures(result: AnalyticsResult, profile: GrantProfile) -> list[M
         met: bool | None = None
         if actual is not None:
             met = actual >= pm.target if pm.direction == "at_least" else actual <= pm.target
+        # Pacing only makes sense for a target you climb toward. An "at most"
+        # target is satisfied by staying low, so "62% of the way there" would be
+        # backwards.
+        attainment: float | None = None
+        if actual is not None and pm.direction == "at_least" and pm.target:
+            attainment = round(100.0 * actual / pm.target, 1)
         measures.append(
             MeasureResult(
                 id=pm.id,
@@ -528,6 +618,8 @@ def _evaluate_measures(result: AnalyticsResult, profile: GrantProfile) -> list[M
                 small_sample=0 < denominator < SMALL_SAMPLE_N,
                 program=pm.program,
                 description=pm.description,
+                attainment_pct=attainment,
+                period_elapsed_pct=result.period_elapsed_pct,
             )
         )
     return measures

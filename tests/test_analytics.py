@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
+from grant_assistant import schema
 from grant_assistant.analytics import compute_analytics
 from grant_assistant.analytics.metrics import NOT_REPORTED_VALUES
 from grant_assistant.ingestion import prepare_dataset
@@ -190,3 +192,119 @@ def test_metric_lookup_contains_headline_metrics(analytics):
     assert lookup["total_enrollments"] == 6
     assert lookup["successful_exit_rate"] == 50.0
     assert lookup["followup_3_month_completion_rate"] == 100.0
+
+
+# -- Length of stay ----------------------------------------------------------
+
+
+def test_median_length_of_stay_uses_only_completed_stays(analytics):
+    """An active client's stay is not yet a length; counting it understates."""
+    assert analytics.n_length_of_stay <= analytics.total_exits
+    assert analytics.median_length_of_stay_days is not None
+    assert analytics.median_length_of_stay_days > 0
+
+
+def test_length_of_stay_ignores_exits_before_enrollment(profile):
+    """A negative span is an audit finding, not a short stay."""
+    from grant_assistant.analytics.metrics import _stay_days
+
+    frame = pd.DataFrame(
+        {
+            schema.ENROLLMENT_DATE: pd.to_datetime(["2024-08-01", "2024-08-01"]),
+            schema.EXIT_DATE: pd.to_datetime(["2024-08-31", "2024-07-01"]),
+        }
+    )
+    days = _stay_days(frame)
+    assert list(days) == [30.0]
+
+
+def test_length_of_stay_is_none_without_completed_stays(profile):
+    """No exit with both dates means no median, not a zero."""
+    from grant_assistant.analytics.metrics import _stay_days
+
+    frame = pd.DataFrame(
+        {
+            schema.ENROLLMENT_DATE: pd.to_datetime(["2024-08-01"]),
+            schema.EXIT_DATE: pd.to_datetime([None]),
+        }
+    )
+    assert len(_stay_days(frame)) == 0
+
+
+def test_length_of_stay_by_destination_suppresses_small_groups(analytics_flawed):
+    """A median over three stays is noise, so it must not be published."""
+    from grant_assistant.analytics.metrics import SMALL_SAMPLE_N
+
+    counts = analytics_flawed.exit_destination_breakdown
+    for destination in analytics_flawed.median_length_of_stay_by_destination:
+        assert counts.get(destination, 0) >= SMALL_SAMPLE_N, destination
+
+
+def test_program_length_of_stay_is_reported(analytics):
+    for program in analytics.programs:
+        if program.exits:
+            assert program.median_length_of_stay_days is not None
+
+
+def test_length_of_stay_is_retrievable_as_a_metric(analytics):
+    lookup = analytics.metric_lookup()
+    assert lookup["median_length_of_stay_days"] == analytics.median_length_of_stay_days
+    assert lookup["avg_length_of_stay_days"] == analytics.avg_length_of_stay_days
+
+
+# -- Period pacing -----------------------------------------------------------
+
+
+def test_period_elapsed_is_a_percentage(analytics):
+    assert analytics.period_elapsed_pct is not None
+    assert analytics.period_elapsed_pct > 0
+
+
+def test_elapsed_can_exceed_one_hundred_after_the_period_closes(analytics):
+    """Past 100% is meaningful, not an error: it says the figures are final."""
+    assert analytics.period_elapsed_pct > 100
+
+
+def test_attainment_is_actual_over_target(analytics):
+    for measure in analytics.measures:
+        if measure.actual is not None and measure.direction == "at_least" and measure.target:
+            assert measure.attainment_pct == round(100.0 * measure.actual / measure.target, 1)
+
+
+def test_at_most_targets_have_no_attainment(analytics):
+    """ "62% of the way there" is backwards for a target you stay under."""
+    for measure in analytics.measures:
+        if measure.direction == "at_most":
+            assert measure.attainment_pct is None
+
+
+def test_on_pace_is_none_once_the_period_has_closed(analytics):
+    """Pacing is a mid-period question; afterwards met/not-met is the answer."""
+    assert analytics.period_elapsed_pct > 100
+    assert all(m.on_pace is None for m in analytics.measures)
+
+
+def test_on_pace_compares_attainment_against_elapsed_time():
+    """The judgement this metric exists to make."""
+    from grant_assistant.analytics.metrics import MeasureResult
+
+    def measure(attainment: float, elapsed: float) -> MeasureResult:
+        return MeasureResult(
+            id="M-1",
+            name="m",
+            metric="x",
+            unit="percent",
+            direction="at_least",
+            target=100.0,
+            actual=attainment,
+            denominator=50,
+            met=False,
+            small_sample=False,
+            attainment_pct=attainment,
+            period_elapsed_pct=elapsed,
+        )
+
+    assert measure(48.0, 62.0).on_pace is False  # behind
+    assert measure(70.0, 62.0).on_pace is True  # ahead
+    assert measure(62.0, 62.0).on_pace is True  # exactly on pace
+    assert measure(20.0, 100.0).on_pace is None  # period closed
