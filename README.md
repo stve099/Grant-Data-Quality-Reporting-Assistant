@@ -18,7 +18,7 @@ All included data is **synthetic** — no real client information exists anywher
 
 | Module | Capability |
 |---|---|
-| **Data Quality Audit** | 27 configurable rules across completeness, uniqueness, validity, consistency, case management, timeliness, and statistical anomaly detection. Severity levels, blocking rules, per-category and per-program scores, row-level exports, remediation guidance. |
+| **Data Quality Audit** | 28 configurable rules across completeness, uniqueness, validity, consistency, case management, timeliness, and statistical anomaly detection. Severity levels, blocking rules, per-category and per-program scores, row-level exports, remediation guidance. |
 | **Analytics** | Deterministic enrollment/exit/outcome/income/follow-up/demographic metrics, program comparisons, monthly trends, period-over-period deltas, and goal-vs-actual performance measures (grant-wide or program-scoped) — every number computed in transparent, tested pandas code. |
 | **AI Data Analyst Agent** | A Senior-Analyst-style agent with **typed tool use**: Claude retrieves exact values through read-only tools over the calculated results, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries. Uses prompt caching, streaming, and extended thinking. Works fully offline in non-AI mode. |
 | **Prompt Evaluation** | A graded eval harness (`grant-assistant eval`) that mechanically verifies the grounding contract: every number traced to a calculation, no client identifiers, refusal when data is unavailable, no system-prompt disclosure. Code-based graders plus an optional model-based rubric judge. |
@@ -47,6 +47,7 @@ Generated from the included flawed sample file (no API key needed) — see [`exa
 - [`examples/grant_report.html`](examples/grant_report.html) — full grant report with interactive charts
 - [`examples/grant_report.pdf`](examples/grant_report.pdf) — PDF rendering of the same report
 - [`examples/grant_report.docx`](examples/grant_report.docx) — Word version of the same report
+- [`examples/grant_report.pptx`](examples/grant_report.pptx) — PowerPoint board deck
 - [`examples/audit_workbook.xlsx`](examples/audit_workbook.xlsx) — audit findings + flagged-record correction template
 - [`examples/analytics_summary.xlsx`](examples/analytics_summary.xlsx) — analytics summary workbook
 - [`sample_data/ISSUES_MANIFEST.md`](sample_data/ISSUES_MANIFEST.md) — every intentionally injected error and the rule that catches it
@@ -378,7 +379,9 @@ errors and runs a CLI smoke pipeline on every push.
 
 `uv sync --extra mcp && uv run grant-assistant-mcp` exposes the pipeline to any MCP client:
 
-- **Tools** — `audit_dataset`, `analyze_dataset`, `generate_report`, `ask_analyst`
+- **Tools** — `audit_dataset`, `analyze_dataset`, `generate_report`, `ask_analyst`,
+  `check_for_personal_information`, `export_correction_worksheet`, `apply_corrections`,
+  `batch_audit`, `data_quality_history`, `get_data_dictionary`
 - **Resources** — `grant://profiles`, `grant://profile/{id}`, `grant://audit-rules`,
   `grant://measure-definitions`
 - **Prompts** — `review_grant_report`, `explain_data_quality_issue`
@@ -400,8 +403,9 @@ Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISH
 
 ## Limitations
 
-- The Word report contains tables and narrative but not chart images (interactive charts
-  live in the HTML/PDF reports and dashboards).
+- The Word report contains tables and narrative; chart images are embedded when the optional
+  chart backend is installed, and skipped gracefully when it is not (interactive charts live
+  in the HTML/PDF reports and dashboards).
 - Statistical trend rules (volume anomalies) use simple z-score/IQR heuristics, not
   forecasting models.
 - One enrollment row per client per program-stay is assumed (HMIS-style extract);
