@@ -248,6 +248,48 @@ def test_configuration_help_lists_the_profile(loaded_app):
     assert "housing" in _text_of(loaded_app).casefold()
 
 
+def test_profile_selector_offers_every_configured_profile():
+    """A new profile in configs/ must reach the selector, not just the registry.
+
+    The selector is built from ``list_profiles()`` and relabels each id with the
+    profile's grant name, so a profile that validates but is never picked up here
+    would be invisible in the UI. This guards the wiring: the option set must
+    match the grant names of every configured profile exactly.
+    """
+    from grant_assistant.configuration import list_profiles, load_profile_file
+
+    app = _app().run()
+    _goto(app, "Upload & Profile")
+    assert not app.exception
+    expected = {load_profile_file(path).grant_name for path in list_profiles().values()}
+    box = next((s for s in app.selectbox if s.label == "Grant profile"), None)
+    assert box is not None, "no 'Grant profile' selectbox on Upload & Profile"
+    missing = expected - set(box.options)
+    assert not missing, f"profile selector missing: {sorted(missing)}"
+
+
+def test_configuration_help_lists_every_registered_rule():
+    """A new rule in the registry must appear on the Configuration Help page.
+
+    The rules tab builds its table from ``list_rules()``; a rule that registers
+    but never reaches this table is undocumented to the user. Tabs execute
+    regardless of which is active, so the dataframe is present either way.
+    """
+    from grant_assistant.audit import list_rules
+
+    app = _app().run()
+    _goto(app, "Configuration Help")
+    assert not app.exception
+    rule_ids = {m.rule_id for m in list_rules()}
+    rules_df = next(
+        (df.value for df in app.dataframe if "Rule" in getattr(df.value, "columns", [])),
+        None,
+    )
+    assert rules_df is not None, "no rules table on the Configuration Help page"
+    missing = rule_ids - set(rules_df["Rule"])
+    assert not missing, f"Configuration Help missing rules: {sorted(missing)}"
+
+
 def test_pii_warning_reaches_the_audit_dashboard(tmp_path, clean_df):
     """A file with identifiers must say so on screen, not only in the CLI."""
     from grant_assistant.audit import run_audit
