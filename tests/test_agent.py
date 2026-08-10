@@ -194,6 +194,68 @@ def test_insights_markdown_renders(analytics_flawed, audit_flawed, profile):
     assert "### Recommended Actions" in md
 
 
+def test_insights_markdown_skips_empty_sections():
+    """as_markdown() omits sections with no items while keeping populated ones."""
+    from grant_assistant.agents.insights import InsightReport
+
+    report = InsightReport(key_findings=["one"], notable_trends=[])
+    md = report.as_markdown()
+    assert "### Key Findings" in md
+    assert "### Notable Trends" not in md
+
+
+def test_insights_branches_for_pii_warnings_and_income_coverage(
+    analytics_flawed, audit_flawed, profile
+):
+    """Lines 178 (pii_warnings) and 263 (<80% income coverage) were uncovered branches."""
+
+    audit_with_pii = audit_flawed.model_copy(
+        update={"pii_warnings": ["Column 'Client Name' is named like a name."]}
+    )
+    analytics_thin_income = analytics_flawed.model_copy(
+        update={"n_income_pairs": 10, "total_exits": 20}
+    )
+    report = generate_insights(analytics_thin_income, audit_with_pii, profile)
+    assert any("personal information" in item for item in report.data_quality_risks)
+    assert any("income collection" in item for item in report.questions_for_investigation)
+
+
+def test_insights_flags_sharp_enrollment_change(analytics_flawed, audit_flawed, profile):
+    """Line 248: a >30% month-over-month enrollment change produces an investigation question."""
+    analytics_spike = analytics_flawed.model_copy(
+        update={"month_over_month_enrollment_change": 45.0}
+    )
+    report = generate_insights(analytics_spike, audit_flawed, profile)
+    assert any(
+        "sharp month-over-month enrollment change" in item
+        for item in report.questions_for_investigation
+    )
+
+
+def test_insights_skips_programs_without_successful_exit_rate(
+    analytics_flawed, audit_flawed, profile
+):
+    """Line 137: programs with None successful_exit_rate are skipped in the anomaly sweep."""
+    programs = [
+        p.model_copy(update={"successful_exit_rate": None}) if idx == 0 else p
+        for idx, p in enumerate(analytics_flawed.programs)
+    ]
+    analytics = analytics_flawed.model_copy(update={"programs": programs})
+    report = generate_insights(analytics, audit_flawed, profile)
+    assert report.key_findings
+
+
+def test_insights_takeaway_when_no_blocking_issues(analytics_flawed, audit_flawed, profile):
+    """Line 286-287: with an audit but no blocking issues, the takeaway notes the score."""
+    # blocking_issues is a computed property; strip blocking flags from issues instead.
+    non_blocking_issues = [
+        issue.model_copy(update={"blocking": False}) for issue in audit_flawed.issues
+    ]
+    clean_audit = audit_flawed.model_copy(update={"issues": non_blocking_issues})
+    report = generate_insights(analytics_flawed, clean_audit, profile)
+    assert any("Data quality is acceptable" in item for item in report.executive_takeaways)
+
+
 def test_executive_summary_deterministic_without_ai(agent, analytics_flawed):
     summary = agent.executive_summary()
     assert str(analytics_flawed.total_enrollments) in summary
@@ -205,7 +267,6 @@ def test_narrated_insights_without_ai_returns_markdown(agent):
     assert "### Key Findings" in text
 
 
-# -- Response routing --------------------------------------------------------
 #
 # Streaming cannot run the tool loop, so a streamed number comes from the fact
 # sheet rather than a traced retrieval. Which path a question takes therefore
