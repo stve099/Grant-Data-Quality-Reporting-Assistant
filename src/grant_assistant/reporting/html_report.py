@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import logging
 from pathlib import Path
 
@@ -10,6 +9,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
 from grant_assistant.analytics.charts import standard_chart_set
+from grant_assistant.reporting.branding import logo_data_uri
 from grant_assistant.reporting.context import ReportData
 
 logger = logging.getLogger(__name__)
@@ -35,27 +35,6 @@ TEMPLATES: dict[str, str] = {
 
 #: Charts included in the concise brief — enough to carry the story, no more.
 _CONCISE_CHARTS = {"goal_vs_actual", "outcome_rates"}
-
-
-def _logo_data_uri(path_value: str | None) -> str:
-    """Read a small trusted local logo, degrading cleanly when unavailable."""
-    if not path_value:
-        return ""
-    path = Path(path_value).expanduser()
-    mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(
-        path.suffix.casefold()
-    )
-    try:
-        if mime is None or not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
-            logger.warning(
-                "Skipping report logo %s: use a local PNG/JPEG no larger than 2 MB.", path
-            )
-            return ""
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    except OSError as exc:
-        logger.warning("Skipping report logo %s: %s", path, exc)
-        return ""
-    return f"data:{mime};base64,{encoded}"
 
 
 def render_html_report(
@@ -96,7 +75,7 @@ def render_html_report(
         a=report.analytics,
         charts=charts_html,
         plotly_js=plotly_js,
-        logo_data_uri=_logo_data_uri(report.profile.report.logo_path),
+        logo_data_uri=logo_data_uri(report),
     )
 
 

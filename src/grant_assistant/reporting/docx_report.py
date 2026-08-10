@@ -11,15 +11,20 @@ from docx.document import Document as DocumentType
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 
+from grant_assistant.reporting.branding import brand_rgb, logo_bytes
 from grant_assistant.reporting.chart_images import CHART_WIDTH_INCHES, figure_png
 from grant_assistant.reporting.context import ReportData
 from grant_assistant.reporting.formatting import format_value as _fmt
 
 logger = logging.getLogger(__name__)
 
-# Tokens from docs/design_system.md (brand-deep blue, secondary ink).
+# Tokens from docs/design_system.md. BRAND is the fallback for the profile's
+# brand_dark_color; MUTED is secondary ink and is not brandable.
 BRAND = RGBColor(0x1C, 0x5C, 0xAB)
 MUTED = RGBColor(0x52, 0x51, 0x4E)
+
+#: Cover logo width; tall logos are constrained by python-docx's aspect scaling.
+LOGO_WIDTH_INCHES = 2.0
 
 
 def _add_table(doc: DocumentType, headers: list[str], rows: list[list[str]]) -> None:
@@ -78,16 +83,22 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
     doc = Document()
     a = report.analytics
     charts: dict[str, object] = standard_chart_set(a, report.audit)
+    brand = RGBColor(*brand_rgb(report))
+    include = report.includes
 
     # --- Cover page ---------------------------------------------------------
-    for _ in range(6):
+    logo = logo_bytes(report)
+    for _ in range(3 if logo else 6):
         doc.add_paragraph()
+    if logo is not None:
+        doc.add_picture(io.BytesIO(logo[0]), width=Inches(LOGO_WIDTH_INCHES))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = title.add_run(report.title)
     run.font.size = Pt(30)
     run.font.bold = True
-    run.font.color.rgb = BRAND
+    run.font.color.rgb = brand
 
     subtitle = doc.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -122,20 +133,21 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
     )
 
     # --- Executive summary --------------------------------------------------
-    doc.add_heading("Executive Summary", level=1)
-    doc.add_paragraph(report.executive_summary)
-    mode = (
-        "AI-assisted narrative grounded in deterministic calculations."
-        if report.ai_generated_narrative
-        else "Deterministic narrative (non-AI mode)."
-    )
-    p = doc.add_paragraph()
-    r = p.add_run(f"Narrative mode: {mode}")
-    r.font.size = Pt(9)
-    r.font.color.rgb = MUTED
+    if include("executive_summary"):
+        doc.add_heading("Executive Summary", level=1)
+        doc.add_paragraph(report.executive_summary)
+        mode = (
+            "AI-assisted narrative grounded in deterministic calculations."
+            if report.ai_generated_narrative
+            else "Deterministic narrative (non-AI mode)."
+        )
+        p = doc.add_paragraph()
+        r = p.add_run(f"Narrative mode: {mode}")
+        r.font.size = Pt(9)
+        r.font.color.rgb = MUTED
 
     # --- Data quality -------------------------------------------------------
-    if report.audit is not None:
+    if report.audit is not None and include("data_quality"):
         doc.add_heading("Data Quality Statement", level=1)
         doc.add_paragraph(report.audit.executive_summary())
         _add_table(
@@ -157,169 +169,182 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
             )
 
     # --- Population served --------------------------------------------------
-    doc.add_heading("Population Served", level=1)
-    _add_table(
-        doc,
-        ["Metric", "Value"],
-        [
-            ["Total enrollments", str(a.total_enrollments)],
-            ["Households served", str(a.households_served)],
-            ["Total individuals", str(a.total_individuals)],
-            ["Adults", str(a.total_adults)],
-            ["Children", str(a.total_children)],
-            ["Active enrollments", str(a.active_enrollments)],
-        ],
-    )
+    if include("population"):
+        doc.add_heading("Population Served", level=1)
+        _add_table(
+            doc,
+            ["Metric", "Value"],
+            [
+                ["Total enrollments", str(a.total_enrollments)],
+                ["Households served", str(a.households_served)],
+                ["Total individuals", str(a.total_individuals)],
+                ["Adults", str(a.total_adults)],
+                ["Children", str(a.total_children)],
+                ["Active enrollments", str(a.active_enrollments)],
+            ],
+        )
 
     # --- Demographics -------------------------------------------------------
-    doc.add_heading("Demographic Summary", level=1)
-    for label, rows in report.demographic_tables():
-        doc.add_heading(label, level=2)
-        _add_table(doc, [label, "Clients"], [[value, str(count)] for value, count in rows])
+    if include("demographics"):
+        doc.add_heading("Demographic Summary", level=1)
+        for label, rows in report.demographic_tables():
+            doc.add_heading(label, level=2)
+            _add_table(doc, [label, "Clients"], [[value, str(count)] for value, count in rows])
 
     # --- Enrollment & exits -------------------------------------------------
-    doc.add_heading("Enrollment & Exit Metrics", level=1)
-    _add_table(
-        doc,
-        ["Metric", "Value"],
-        [
-            ["Total exits", str(a.total_exits)],
-            ["Exit rate", _fmt(a.exit_rate, "percent")],
-            ["Successful exits", str(a.successful_exits)],
-            ["Successful exit rate", _fmt(a.successful_exit_rate, "percent")],
-            ["Permanent housing exits", str(a.permanent_housing_exits)],
-            ["Permanent housing rate", _fmt(a.permanent_housing_rate, "percent")],
-        ],
-    )
+    if include("enrollment"):
+        doc.add_heading("Enrollment & Exit Metrics", level=1)
+        _add_table(
+            doc,
+            ["Metric", "Value"],
+            [
+                ["Total exits", str(a.total_exits)],
+                ["Exit rate", _fmt(a.exit_rate, "percent")],
+                ["Successful exits", str(a.successful_exits)],
+                ["Successful exit rate", _fmt(a.successful_exit_rate, "percent")],
+                ["Permanent housing exits", str(a.permanent_housing_exits)],
+                ["Permanent housing rate", _fmt(a.permanent_housing_rate, "percent")],
+            ],
+        )
 
-    _add_chart(doc, charts, "enrollment_trends", "Monthly enrollments and exits")
+        _add_chart(doc, charts, "enrollment_trends", "Monthly enrollments and exits")
 
     # --- Housing outcomes ---------------------------------------------------
-    doc.add_heading("Housing Outcomes", level=1)
-    _add_table(
-        doc,
-        ["Exit destination", "Exits"],
-        [[dest, str(count)] for dest, count in a.exit_destination_breakdown.items()],
-    )
+    if include("outcomes"):
+        doc.add_heading("Housing Outcomes", level=1)
+        _add_table(
+            doc,
+            ["Exit destination", "Exits"],
+            [[dest, str(count)] for dest, count in a.exit_destination_breakdown.items()],
+        )
 
-    _add_chart(doc, charts, "exit_destinations", "Where households went at exit")
+        _add_chart(doc, charts, "exit_destinations", "Where households went at exit")
 
     # --- Income outcomes ----------------------------------------------------
-    doc.add_heading("Income Outcomes", level=1)
-    _add_table(
-        doc,
-        ["Metric", "Value"],
-        [
-            ["Average entry income", _fmt(a.avg_entry_income, "currency")],
-            ["Average exit income", _fmt(a.avg_exit_income, "currency")],
-            ["Average income change", _fmt(a.avg_income_change, "currency")],
-            ["Median income change", _fmt(a.median_income_change, "currency")],
-            ["% households increasing income", _fmt(a.pct_income_increased, "percent")],
-            ["Exits with complete income data", str(a.n_income_pairs)],
-        ],
-    )
+    if include("income"):
+        doc.add_heading("Income Outcomes", level=1)
+        _add_table(
+            doc,
+            ["Metric", "Value"],
+            [
+                ["Average entry income", _fmt(a.avg_entry_income, "currency")],
+                ["Average exit income", _fmt(a.avg_exit_income, "currency")],
+                ["Average income change", _fmt(a.avg_income_change, "currency")],
+                ["Median income change", _fmt(a.median_income_change, "currency")],
+                ["% households increasing income", _fmt(a.pct_income_increased, "percent")],
+                ["Exits with complete income data", str(a.n_income_pairs)],
+            ],
+        )
 
-    _add_chart(doc, charts, "income_change", "Income change from entry to exit")
+        _add_chart(doc, charts, "income_change", "Income change from entry to exit")
 
     # --- Follow-ups ---------------------------------------------------------
-    doc.add_heading("Follow-Up Outcomes", level=1)
-    _add_table(
-        doc,
-        ["Milestone", "Due", "Completed", "Overdue", "Completion rate"],
-        [
+    if include("followups"):
+        doc.add_heading("Follow-Up Outcomes", level=1)
+        _add_table(
+            doc,
+            ["Milestone", "Due", "Completed", "Overdue", "Completion rate"],
             [
-                f.label,
-                str(f.due),
-                str(f.completed_of_due),
-                str(f.overdue),
-                _fmt(f.completion_rate, "percent"),
-            ]
-            for f in a.followups
-        ],
-    )
+                [
+                    f.label,
+                    str(f.due),
+                    str(f.completed_of_due),
+                    str(f.overdue),
+                    _fmt(f.completion_rate, "percent"),
+                ]
+                for f in a.followups
+            ],
+        )
 
-    _add_chart(doc, charts, "followups", "Follow-up completion by interval")
+        _add_chart(doc, charts, "followups", "Follow-up completion by interval")
 
     # --- Performance measures -----------------------------------------------
-    doc.add_heading("Performance Measures", level=1)
-    _add_table(
-        doc,
-        ["Measure", "Target", "Actual", "Status"],
-        [
+    if include("measures"):
+        doc.add_heading("Performance Measures", level=1)
+        _add_table(
+            doc,
+            ["Measure", "Target", "Actual", "Status"],
             [
-                m.name + (" (small sample)" if m.small_sample else ""),
-                _fmt(m.target, m.unit),
-                _fmt(m.actual, m.unit),
-                "Met" if m.met else ("Not met" if m.met is False else "No data"),
-            ]
-            for m in a.measures
-        ],
-    )
+                [
+                    m.name + (" (small sample)" if m.small_sample else ""),
+                    _fmt(m.target, m.unit),
+                    _fmt(m.actual, m.unit),
+                    "Met" if m.met else ("Not met" if m.met is False else "No data"),
+                ]
+                for m in a.measures
+            ],
+        )
 
-    _add_chart(doc, charts, "goal_vs_actual", "Performance measures against target")
+        _add_chart(doc, charts, "goal_vs_actual", "Performance measures against target")
 
     # --- Program comparison -------------------------------------------------
-    doc.add_heading("Program Comparison", level=1)
-    _add_table(
-        doc,
-        [
-            "Program",
-            "Enrollments",
-            "Exits",
-            "Successful exit rate",
-            "Permanent housing rate",
-            "Avg income change",
-        ],
-        [
+    if include("programs"):
+        doc.add_heading("Program Comparison", level=1)
+        _add_table(
+            doc,
             [
-                p.program,
-                str(p.enrollments),
-                str(p.exits),
-                _fmt(p.successful_exit_rate, "percent"),
-                _fmt(p.permanent_housing_rate, "percent"),
-                _fmt(p.avg_income_change, "currency"),
-            ]
-            for p in a.programs
-        ],
-    )
+                "Program",
+                "Enrollments",
+                "Exits",
+                "Successful exit rate",
+                "Permanent housing rate",
+                "Avg income change",
+            ],
+            [
+                [
+                    p.program,
+                    str(p.enrollments),
+                    str(p.exits),
+                    _fmt(p.successful_exit_rate, "percent"),
+                    _fmt(p.permanent_housing_rate, "percent"),
+                    _fmt(p.avg_income_change, "currency"),
+                ]
+                for p in a.programs
+            ],
+        )
 
-    _add_chart(doc, charts, "program_comparison", "Enrollments and exits by program")
-    _add_chart(doc, charts, "outcome_rates", "Outcome rates by program")
+        _add_chart(doc, charts, "program_comparison", "Enrollments and exits by program")
+        _add_chart(doc, charts, "outcome_rates", "Outcome rates by program")
 
     # --- Findings and recommendations ---------------------------------------
-    doc.add_heading("Key Findings", level=1)
-    _bullets(doc, report.insights.key_findings + report.insights.notable_trends)
-    doc.add_heading("Challenges & Risks", level=1)
-    _bullets(
-        doc,
-        report.insights.program_concerns
-        + report.insights.data_quality_risks
-        + report.insights.anomalies,
-    )
-    doc.add_heading("Recommended Actions", level=1)
-    _bullets(doc, report.insights.recommended_actions)
+    if include("findings"):
+        doc.add_heading("Key Findings", level=1)
+        _bullets(doc, report.insights.key_findings + report.insights.notable_trends)
+        doc.add_heading("Challenges & Risks", level=1)
+        _bullets(
+            doc,
+            report.insights.program_concerns
+            + report.insights.data_quality_risks
+            + report.insights.anomalies,
+        )
+    if include("recommendations"):
+        doc.add_heading("Recommended Actions", level=1)
+        _bullets(doc, report.insights.recommended_actions)
 
     # --- Methodology and limitations ----------------------------------------
-    doc.add_heading("Methodology", level=1)
-    doc.add_paragraph(
-        "All metrics are calculated deterministically from the uploaded data extract using "
-        f"the '{report.profile.profile_id}' grant profile. Field mappings translate source "
-        "columns onto a canonical schema; program aliases are normalized; exact duplicate "
-        "enrollments are removed before analysis; outcome categories and successful-exit "
-        "definitions come from the profile's exit destination mappings; follow-up due dates "
-        "are derived from exit dates plus the configured schedule. AI narrative (when "
-        "enabled) is generated strictly from these pre-calculated metrics."
-    )
-    doc.add_heading("Data Limitations", level=1)
-    _bullets(doc, report.data_limitations())
+    if include("methodology"):
+        doc.add_heading("Methodology", level=1)
+        doc.add_paragraph(
+            "All metrics are calculated deterministically from the uploaded data extract using "
+            f"the '{report.profile.profile_id}' grant profile. Field mappings translate source "
+            "columns onto a canonical schema; program aliases are normalized; exact duplicate "
+            "enrollments are removed before analysis; outcome categories and successful-exit "
+            "definitions come from the profile's exit destination mappings; follow-up due dates "
+            "are derived from exit dates plus the configured schedule. AI narrative (when "
+            "enabled) is generated strictly from these pre-calculated metrics."
+        )
+    if include("limitations"):
+        doc.add_heading("Data Limitations", level=1)
+        _bullets(doc, report.data_limitations())
 
     # --- Appendix -----------------------------------------------------------
-    doc.add_heading("Appendix: Measure Definitions", level=1)
-    _add_table(
-        doc,
-        ["Measure", "Definition"],
-        [[name, definition] for name, definition in report.measure_definitions()],
-    )
+    if include("appendix"):
+        doc.add_heading("Appendix: Measure Definitions", level=1)
+        _add_table(
+            doc,
+            ["Measure", "Definition"],
+            [[name, definition] for name, definition in report.measure_definitions()],
+        )
 
     for section in doc.sections:
         section.left_margin = Inches(0.9)

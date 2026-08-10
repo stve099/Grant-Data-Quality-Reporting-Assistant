@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.10.0 — 2026-08-10
 
 This pass implements the adoption improvements identified in the repository review: easier
 maintenance, safer provider failures, branded reports, relational imports,
@@ -9,8 +9,11 @@ and unattended audits.
 ### Added
 
 - **Report branding and real section selection.** Profiles can set two validated brand colors
-  and an optional local PNG/JPEG logo. The existing `report.sections` setting now controls the
-  full HTML report instead of being ignored; unknown and duplicate section names are rejected.
+  and an optional local PNG/JPEG logo. The existing `report.sections` setting now controls
+  every narrative renderer — full HTML, the executive brief, PDF, Word, and PowerPoint — instead
+  of being ignored; unknown and duplicate section names are rejected. Branding resolves once in
+  `reporting/branding.py`, so a deck cannot carry different colors than the report it summarizes.
+  The Excel workbooks are unaffected: they are data exports, not narrative layouts.
 - **Relational extract flattening.** `merge-datasets` safely adds columns from one-row-per-key
   related CSV/Excel files, normalizes join-key whitespace, rejects missing or duplicate related
   keys, and preserves primary-file values.
@@ -24,6 +27,11 @@ and unattended audits.
 - **Adversarial acceptance tests** cover related-file duplicates, cross-program alias
   collisions, report branding/section validation, command registration, provider HTTP failures,
   and verified-TLS automated-audit summaries.
+- **End-to-end smoke tests for the two new commands.** `merge-datasets` and `scheduled-audit`
+  now execute in tests rather than only appearing in `--help`: the merged extract is audited,
+  a duplicate related key exits non-zero, the scheduled run records history and writes an
+  offline report, and the email path is exercised against a fake SMTP relay. A cross-renderer
+  test asserts that one deselected section disappears from HTML, the brief, and Word together.
 
 ### Changed
 - **The oversized interface and analytics modules are split by responsibility.** Streamlit

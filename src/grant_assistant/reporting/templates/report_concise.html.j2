@@ -12,7 +12,7 @@
 <style>
   :root {
     --ink: #0b0b0b; --muted: #52514e; --line: #e1e0d9;
-    --brand: #2a78d6; --brand-dark: #1c5cab; --good: #0ca30c; --bad: #d03b3b;
+    --brand: {{ r.profile.report.brand_color }}; --brand-dark: {{ r.profile.report.brand_dark_color }}; --good: #0ca30c; --bad: #d03b3b;
     --bg-soft: #f9f9f7;
   }
   * { box-sizing: border-box; }
@@ -64,6 +64,7 @@
 
 <div class="masthead">
   <div class="masthead-inner">
+    {% if logo_data_uri %}<img src="{{ logo_data_uri }}" alt="Organization logo" style="max-height: 48px; max-width: 200px; margin-bottom: 12px;">{% endif %}
     <div class="eyebrow">Executive Brief</div>
     <h1>{{ r.profile.grant_name }}</h1>
     <div class="meta">
@@ -76,9 +77,12 @@
 
 <div class="page">
 
+{% if r.includes("executive_summary") %}
 <h2>Executive Summary</h2>
 <p>{{ r.executive_summary }}</p>
+{% endif %}
 
+{% if r.includes("population") %}
 <h2>Headline Results</h2>
 <div class="kpis">
   <div class="kpi"><div class="v">{{ a.total_enrollments }}</div><div class="l">Enrollments</div></div>
@@ -88,10 +92,11 @@
   <div class="kpi"><div class="v">{{ a.successful_exit_rate if a.successful_exit_rate is not none else "n/a" }}{% if a.successful_exit_rate is not none %}%{% endif %}</div><div class="l">Successful exit rate</div></div>
   <div class="kpi"><div class="v">{{ a.permanent_housing_rate if a.permanent_housing_rate is not none else "n/a" }}{% if a.permanent_housing_rate is not none %}%{% endif %}</div><div class="l">Permanent housing rate</div></div>
   <div class="kpi"><div class="v">{{ "$%s"|format("{:,.0f}".format(a.median_income_change)) if a.median_income_change is not none else "n/a" }}</div><div class="l">Median income change</div></div>
-  {% if r.audit %}<div class="kpi"><div class="v">{{ "%.0f"|format(r.audit.overall_score) }}</div><div class="l">Data quality ({{ r.audit.grade }})</div></div>{% endif %}
+  {% if r.audit and r.includes("data_quality") %}<div class="kpi"><div class="v">{{ "%.0f"|format(r.audit.overall_score) }}</div><div class="l">Data quality ({{ r.audit.grade }})</div></div>{% endif %}
 </div>
+{% endif %}
 
-{% if r.audit and r.audit.blocking_issues %}
+{% if r.audit and r.audit.blocking_issues and r.includes("data_quality") %}
 <div class="flag">
   <strong>Not yet submission-ready.</strong>
   {{ r.audit.blocking_issues|length }} blocking data quality issue type(s) must be resolved:
@@ -99,6 +104,7 @@
 </div>
 {% endif %}
 
+{% if r.includes("measures") %}
 <h2>Performance Measures</h2>
 <table>
   <tr><th>Measure</th><th class="num">Target</th><th class="num">Actual</th><th>Status</th></tr>
@@ -112,7 +118,9 @@
   {% endfor %}
 </table>
 {% if charts.goal_vs_actual %}<div class="chart">{{ charts.goal_vs_actual }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("programs") %}
 <h2>Program Comparison</h2>
 <table>
   <tr><th>Program</th><th class="num">Enrolled</th><th class="num">Exits</th><th class="num">Successful</th><th class="num">Permanent housing</th></tr>
@@ -127,7 +135,9 @@
   {% endfor %}
 </table>
 {% if charts.outcome_rates %}<div class="chart">{{ charts.outcome_rates }}</div>{% endif %}
+{% endif %}
 
+{% if r.includes("findings") %}
 <h2>Key Findings</h2>
 <ul>
   {% for item in r.insights.key_findings[:4] %}<li>{{ item }}</li>{% endfor %}
@@ -139,20 +149,29 @@
   {% for item in r.insights.program_concerns[:3] %}<li>{{ item }}</li>{% endfor %}
   {% for item in r.insights.data_quality_risks[:3] %}<li>{{ item }}</li>{% endfor %}
 </ul>
+{% endif %}
 
+{% if r.includes("recommendations") %}
 <h2>Recommended Actions</h2>
 <ul>
   {% for item in r.insights.recommended_actions[:5] %}<li>{{ item }}</li>{% endfor %}
 </ul>
+{% endif %}
 
+{% if r.includes("methodology") or r.includes("limitations") %}
 <h2>Methodology &amp; Limitations</h2>
+{% if r.includes("methodology") %}
 <p>Metrics are calculated deterministically from the uploaded extract using the
 "{{ r.profile.profile_id }}" profile; duplicate enrollments are removed before analysis and
 outcome definitions come from the profile's destination mappings. AI narrative, when
 enabled, is generated from these pre-calculated metrics and performs no arithmetic.</p>
+{% endif %}
+{% if r.includes("limitations") %}
 <ul>
   {% for item in r.data_limitations()[:4] %}<li>{{ item }}</li>{% endfor %}
 </ul>
+{% endif %}
+{% endif %}
 
 <div class="footer">
   Executive brief · full detail available in the complete report ·

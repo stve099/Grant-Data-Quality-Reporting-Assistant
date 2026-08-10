@@ -167,8 +167,10 @@ report:
              methodology, limitations, appendix]
 ```
 
-The `sections` list controls which full-report sections render; omitted sections are not
-generated.
+The `sections` list controls which narrative sections render. It applies to every narrative
+renderer at once — full HTML, the executive brief, PDF, Word, and PowerPoint — so a funder
+cannot receive a trimmed PDF and a complete Word document from the same run. The Excel
+workbooks are data exports and always contain every sheet.
 
 ## Tips
 

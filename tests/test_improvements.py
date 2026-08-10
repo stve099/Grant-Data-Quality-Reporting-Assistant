@@ -85,6 +85,102 @@ def test_report_branding_and_section_selection_are_honored(profile, analytics_cl
     assert "Performance Measures" not in html
 
 
+def test_concise_brief_honors_branding_and_section_selection(profile, analytics_clean):
+    from grant_assistant.reporting import build_report_data, render_html_report
+
+    branded = profile.model_copy(deep=True)
+    branded.report.brand_color = "#123456"
+    branded.report.sections = ["executive_summary", "population"]
+
+    html = render_html_report(
+        build_report_data(analytics_clean, None, branded), include_charts=False, template="concise"
+    )
+
+    assert "--brand: #123456" in html
+    assert "Headline Results" in html
+    assert "Performance Measures" not in html
+    assert "Recommended Actions" not in html
+
+
+def test_word_report_honors_branding_and_section_selection(profile, analytics_clean, tmp_path):
+    from docx import Document
+
+    from grant_assistant.reporting import build_report_data, write_docx_report
+
+    branded = profile.model_copy(deep=True)
+    branded.report.brand_dark_color = "#123456"
+    branded.report.sections = ["executive_summary", "population"]
+
+    report = build_report_data(analytics_clean, None, branded)
+    path = write_docx_report(report, tmp_path / "r.docx")
+
+    doc = Document(str(path))
+    headings = [p.text for p in doc.paragraphs if p.style.name.startswith("Heading")]
+    assert any("Population Served" in h for h in headings)
+    assert not any("Income Outcomes" in h for h in headings)
+    assert not any("Appendix" in h for h in headings)
+    title_run = next(p.runs[0] for p in doc.paragraphs if p.runs)
+    assert title_run.text == report.title
+    assert str(title_run.font.color.rgb) == "123456"
+
+
+def test_slide_deck_honors_branding_and_section_selection(profile, analytics_clean, tmp_path):
+    import importlib.util
+
+    import pytest
+
+    if importlib.util.find_spec("pptx") is None:
+        pytest.skip("pptx extra not installed")
+    from pptx import Presentation
+
+    from grant_assistant.reporting import build_report_data, write_pptx_report
+
+    branded = profile.model_copy(deep=True)
+    branded.report.brand_dark_color = "#123456"
+    branded.report.sections = ["executive_summary", "population"]
+
+    path = write_pptx_report(build_report_data(analytics_clean, None, branded), tmp_path / "d.pptx")
+
+    deck = Presentation(str(path))
+    text = "\n".join(
+        shape.text_frame.text
+        for slide in deck.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "At a glance" in text
+    assert "Performance measures" not in text
+    assert "Recommended actions" not in text
+    title_run = deck.slides[0].shapes[0].text_frame.paragraphs[0].runs[0]
+    assert str(title_run.font.color.rgb) == "123456"
+
+
+def test_every_renderer_drops_the_same_deselected_section(profile, analytics_clean, tmp_path):
+    """One profile setting must mean the same thing in all four renderers.
+
+    Without this, a funder receives a five-section PDF and a fifteen-section Word
+    document generated from the same run.
+    """
+    from docx import Document
+
+    from grant_assistant.reporting import build_report_data, render_html_report, write_docx_report
+
+    trimmed = profile.model_copy(deep=True)
+    trimmed.report.sections = [
+        name for name in trimmed.report.sections if name not in {"income", "measures"}
+    ]
+    report = build_report_data(analytics_clean, None, trimmed)
+
+    full_html = render_html_report(report, include_charts=False)
+    brief_html = render_html_report(report, include_charts=False, template="concise")
+    doc = Document(str(write_docx_report(report, tmp_path / "r.docx")))
+    headings = "\n".join(p.text for p in doc.paragraphs if p.style.name.startswith("Heading"))
+
+    for rendered in (full_html, brief_html, headings):
+        assert "Income Outcomes" not in rendered
+        assert "Performance Measures" not in rendered
+
+
 def test_report_sections_reject_unknown_or_duplicate_names(profile):
     import pytest
     from pydantic import ValidationError

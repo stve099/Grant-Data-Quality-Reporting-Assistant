@@ -690,3 +690,174 @@ def test_ask_and_insights_non_ai_paths_print_sections(tmp_path):
     )
     assert insights.exit_code == 0
     assert "Proactive Insights" in insights.output
+
+
+# --- Relational flattening and scheduler-driven runs --------------------------
+# These two commands are the project's automation surface: they run unattended,
+# so a wiring break shows up as a silent empty output directory rather than a
+# stack trace someone sees.
+
+
+def _related_pair(tmp_path, related_rows: list[str]) -> tuple[str, str]:
+    primary = tmp_path / "primary.csv"
+    primary.write_text(
+        "Client ID,Program Name,Entry Date\nC1,Rapid Rehousing,2025-01-05\n"
+        "C2,Rapid Rehousing,2025-01-06\n",
+        encoding="utf-8",
+    )
+    related = tmp_path / "income.csv"
+    related.write_text(
+        "Client ID,Monthly Income at Exit\n" + "".join(related_rows), encoding="utf-8"
+    )
+    return str(primary), str(related)
+
+
+def test_merge_datasets_writes_the_combined_extract(tmp_path):
+    primary, related = _related_pair(tmp_path, ["C1,1000\n", "C2,1200\n"])
+    output = tmp_path / "merged" / "combined.csv"
+
+    result = _run(
+        "merge-datasets",
+        primary,
+        related,
+        "--output",
+        str(output),
+        "--config-dir",
+        str(CONFIG_DIR),
+    )
+
+    assert output.exists()
+    assert "Merged 1 related file(s)" in result.output
+    text = output.read_text(encoding="utf-8")
+    assert "Monthly Income at Exit" in text
+    assert "1200" in text
+
+
+def test_merge_datasets_rejects_a_related_file_with_duplicate_keys(tmp_path):
+    primary, related = _related_pair(tmp_path, ["C1,1000\n", "C1,1200\n"])
+
+    result = runner.invoke(
+        app,
+        [
+            "merge-datasets",
+            primary,
+            related,
+            "--output",
+            str(tmp_path / "combined.csv"),
+            "--config-dir",
+            str(CONFIG_DIR),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "duplicate join key" in result.output
+
+
+def test_merged_output_is_auditable(tmp_path):
+    """The merge is only useful if audit accepts what it produces."""
+    primary, related = _related_pair(tmp_path, ["C1,1000\n", "C2,1200\n"])
+    merged = tmp_path / "combined.csv"
+    _run(
+        "merge-datasets", primary, related, "--output", str(merged), "--config-dir", str(CONFIG_DIR)
+    )
+
+    result = _run("audit", str(merged), "--config-dir", str(CONFIG_DIR))
+
+    assert "Data Quality" in result.output
+
+
+def test_scheduled_audit_records_history_and_writes_a_report(tmp_path):
+    db = tmp_path / "history.db"
+    output = tmp_path / "scheduled"
+
+    result = _run(
+        "scheduled-audit",
+        str(FLAWED),
+        "--output",
+        str(output),
+        "--db",
+        str(db),
+        "--label",
+        "nightly",
+        "--config-dir",
+        str(CONFIG_DIR),
+    )
+
+    assert "Run #1 recorded" in result.output
+    assert db.exists()
+    reports = list(output.glob("*.html"))
+    assert len(reports) == 1
+    # Offline charts: a scheduled report is read without the operator present, so
+    # plotly.js must be inlined rather than pulled from a CDN at open time. (The
+    # inlined bundle mentions the CDN host in its own source, so match the tag.)
+    assert '<script src="https://cdn.plot.ly' not in reports[0].read_text(encoding="utf-8")
+
+    history = _run("history", "--db", str(db))
+    assert "nightly" in history.output
+
+
+def test_scheduled_audit_emails_the_summary_when_smtp_is_configured(tmp_path, monkeypatch):
+    sent: dict[str, object] = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            sent["host"] = host
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def starttls(self, *, context):
+            sent["tls"] = True
+
+        def send_message(self, message):
+            sent["body"] = message.get_content()
+            sent["to"] = message["To"]
+
+    monkeypatch.setattr("grant_assistant.automation.smtplib.SMTP", FakeSMTP)
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_FROM", "reports@example.org")
+
+    result = _run(
+        "scheduled-audit",
+        str(FLAWED),
+        "--output",
+        str(tmp_path / "out"),
+        "--db",
+        str(tmp_path / "h.db"),
+        "--email-to",
+        "reviewer@example.org",
+        "--config-dir",
+        str(CONFIG_DIR),
+    )
+
+    assert "Email summary sent." in result.output
+    assert sent["tls"] is True
+    assert sent["to"] == "reviewer@example.org"
+    assert "Data quality score" in str(sent["body"])
+
+
+def test_scheduled_audit_refuses_to_email_without_smtp_configuration(tmp_path, monkeypatch):
+    monkeypatch.delenv("GRANT_ASSISTANT_SMTP_HOST", raising=False)
+    monkeypatch.delenv("GRANT_ASSISTANT_SMTP_FROM", raising=False)
+
+    result = runner.invoke(
+        app,
+        [
+            "scheduled-audit",
+            str(FLAWED),
+            "--output",
+            str(tmp_path / "out"),
+            "--db",
+            str(tmp_path / "h.db"),
+            "--email-to",
+            "reviewer@example.org",
+            "--config-dir",
+            str(CONFIG_DIR),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "GRANT_ASSISTANT_SMTP_HOST" in result.output

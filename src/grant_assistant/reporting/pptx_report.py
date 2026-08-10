@@ -20,13 +20,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from grant_assistant.reporting.branding import brand_rgb, logo_bytes
 from grant_assistant.reporting.chart_images import figure_png
 from grant_assistant.reporting.context import ReportData
 from grant_assistant.reporting.formatting import format_value as _fmt
 
 logger = logging.getLogger(__name__)
 
-# Tokens from docs/design_system.md, matching the Word report.
+# Tokens from docs/design_system.md, matching the Word report. BRAND is the
+# fallback for the profile's brand_dark_color; the rest are not brandable.
 BRAND = (0x1C, 0x5C, 0xAB)
 INK = (0x1A, 0x1A, 0x1A)
 MUTED = (0x52, 0x51, 0x4E)
@@ -62,6 +64,8 @@ def write_pptx_report(report: ReportData, path: str | Path) -> Path:
     presentation.slide_width = Inches(SLIDE_WIDTH_IN)
     presentation.slide_height = Inches(SLIDE_HEIGHT_IN)
     blank = presentation.slide_layouts[6]
+    brand = brand_rgb(report)
+    include = report.includes
 
     def add_slide() -> Any:
         return presentation.slides.add_slide(blank)
@@ -94,7 +98,7 @@ def write_pptx_report(report: ReportData, path: str | Path) -> Path:
         return frame
 
     def heading(slide: Any, text: str) -> None:
-        textbox(slide, text, 0.6, 0.4, 12.1, 0.9, size=30, bold=True, color=BRAND)
+        textbox(slide, text, 0.6, 0.4, 12.1, 0.9, size=30, bold=True, color=brand)
 
     def bullets(slide: Any, items: list[str], top: float, size: int = 16) -> None:
         if not items:
@@ -127,8 +131,14 @@ def write_pptx_report(report: ReportData, path: str | Path) -> Path:
 
     # --- Title --------------------------------------------------------------
     slide = add_slide()
+    logo = logo_bytes(report)
+    if logo is not None:
+        # Centered above the title block; python-docx-style aspect scaling keeps it sane.
+        slide.shapes.add_picture(
+            io.BytesIO(logo[0]), Inches(SLIDE_WIDTH_IN / 2 - 1.0), Inches(1.1), width=Inches(2.0)
+        )
     textbox(
-        slide, report.title, 0.8, 2.4, 11.7, 1.2, size=44, bold=True, color=BRAND, align_center=True
+        slide, report.title, 0.8, 2.4, 11.7, 1.2, size=44, bold=True, color=brand, align_center=True
     )
     textbox(
         slide,
@@ -165,35 +175,40 @@ def write_pptx_report(report: ReportData, path: str | Path) -> Path:
     )
 
     # --- Headline numbers ---------------------------------------------------
-    slide = add_slide()
-    heading(slide, "At a glance")
-    cards = [
-        ("Households served", _fmt(a.households_served)),
-        ("Individuals", _fmt(a.total_individuals)),
-        ("Exits", _fmt(a.total_exits)),
-        ("Permanent housing rate", _fmt(a.permanent_housing_rate, "percent")),
-        ("Income increased", _fmt(a.pct_income_increased, "percent")),
-        ("Follow-up completion", _fmt(a.overall_followup_completion_rate, "percent")),
-    ]
-    for index, (label, value) in enumerate(cards):
-        column, row = index % 3, index // 3
-        left = 0.8 + column * 4.0
-        top = 1.6 + row * 2.3
-        textbox(slide, value, left, top, 3.7, 1.0, size=40, bold=True, color=BRAND)
-        textbox(slide, label, left, top + 1.0, 3.7, 0.6, size=14, color=MUTED)
+    if include("population"):
+        slide = add_slide()
+        heading(slide, "At a glance")
+        cards = [
+            ("Households served", _fmt(a.households_served)),
+            ("Individuals", _fmt(a.total_individuals)),
+            ("Exits", _fmt(a.total_exits)),
+            ("Permanent housing rate", _fmt(a.permanent_housing_rate, "percent")),
+            ("Income increased", _fmt(a.pct_income_increased, "percent")),
+            ("Follow-up completion", _fmt(a.overall_followup_completion_rate, "percent")),
+        ]
+        for index, (label, value) in enumerate(cards):
+            column, row = index % 3, index // 3
+            left = 0.8 + column * 4.0
+            top = 1.6 + row * 2.3
+            textbox(slide, value, left, top, 3.7, 1.0, size=40, bold=True, color=brand)
+            textbox(slide, label, left, top + 1.0, 3.7, 0.6, size=14, color=MUTED)
 
     # --- Executive summary --------------------------------------------------
-    slide = add_slide()
-    heading(slide, "Executive summary")
-    textbox(slide, report.executive_summary, 0.8, 1.5, 11.7, 5.0, size=15)
+    if include("executive_summary"):
+        slide = add_slide()
+        heading(slide, "Executive summary")
+        textbox(slide, report.executive_summary, 0.8, 1.5, 11.7, 5.0, size=15)
 
     # --- Charts -------------------------------------------------------------
-    chart_slide("Outcomes by program", "outcome_rates", charts)
-    chart_slide("Performance against target", "goal_vs_actual", charts)
-    chart_slide("Enrollment and exit trend", "enrollment_trends", charts)
+    if include("programs"):
+        chart_slide("Outcomes by program", "outcome_rates", charts)
+    if include("measures"):
+        chart_slide("Performance against target", "goal_vs_actual", charts)
+    if include("enrollment"):
+        chart_slide("Enrollment and exit trend", "enrollment_trends", charts)
 
     # --- Performance measures ----------------------------------------------
-    if a.measures:
+    if a.measures and include("measures"):
         slide = add_slide()
         heading(slide, "Performance measures")
         rows = len(a.measures) + 1
@@ -223,12 +238,12 @@ def write_pptx_report(report: ReportData, path: str | Path) -> Path:
                     run.font.bold = True
 
     # --- Data quality -------------------------------------------------------
-    if report.audit is not None:
+    if report.audit is not None and include("data_quality"):
         audit = report.audit
         slide = add_slide()
         heading(slide, "Data quality")
         textbox(
-            slide, f"{audit.overall_score:.1f}", 0.8, 1.5, 3.0, 1.2, size=54, bold=True, color=BRAND
+            slide, f"{audit.overall_score:.1f}", 0.8, 1.5, 3.0, 1.2, size=54, bold=True, color=brand
         )
         textbox(
             slide,
@@ -255,28 +270,35 @@ def write_pptx_report(report: ReportData, path: str | Path) -> Path:
             run.font.color.rgb = RGBColor(*INK)
 
     # --- Findings and actions ----------------------------------------------
-    slide = add_slide()
-    heading(slide, "Key findings")
-    bullets(slide, (report.insights.key_findings + report.insights.notable_trends)[:8], 1.5)
+    if include("findings"):
+        slide = add_slide()
+        heading(slide, "Key findings")
+        bullets(slide, (report.insights.key_findings + report.insights.notable_trends)[:8], 1.5)
 
-    slide = add_slide()
-    heading(slide, "Recommended actions")
-    bullets(slide, report.insights.recommended_actions[:8], 1.5)
+    if include("recommendations"):
+        slide = add_slide()
+        heading(slide, "Recommended actions")
+        bullets(slide, report.insights.recommended_actions[:8], 1.5)
 
     # --- Methodology --------------------------------------------------------
-    slide = add_slide()
-    heading(slide, "Methodology and limitations")
-    mode = (
-        "AI-assisted narrative grounded in deterministic calculations."
-        if report.ai_generated_narrative
-        else "Deterministic narrative (non-AI mode)."
-    )
-    items = [
-        "Every figure in this deck is calculated by the application; the AI layer only narrates.",
-        mode,
-        *report.data_limitations()[:5],
-    ]
-    bullets(slide, items, 1.5, size=14)
+    if include("methodology") or include("limitations"):
+        slide = add_slide()
+        heading(slide, "Methodology and limitations")
+        mode = (
+            "AI-assisted narrative grounded in deterministic calculations."
+            if report.ai_generated_narrative
+            else "Deterministic narrative (non-AI mode)."
+        )
+        items = []
+        if include("methodology"):
+            items += [
+                "Every figure in this deck is calculated by the application; "
+                "the AI layer only narrates.",
+                mode,
+            ]
+        if include("limitations"):
+            items += report.data_limitations()[:5]
+        bullets(slide, items, 1.5, size=14)
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
