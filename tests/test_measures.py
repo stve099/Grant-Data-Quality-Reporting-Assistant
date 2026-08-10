@@ -110,6 +110,49 @@ def test_program_scoped_measure(rrh_profile):
     assert rrh6.small_sample is True
 
 
+def test_program_scoped_diversion_measure(hp_profile):
+    # SN-6 scopes successful_exit_rate to Emergency Shelter, and the diversion
+    # definition counts temporary housing as successful — a different metric on
+    # a different program than RRH-6, so it gets its own guard.
+    rows = [
+        # ES exit to temporary housing: successful under the diversion definition.
+        make_row(
+            VALID_EXITED,
+            client_id="C-1",
+            household_id="H-1",
+            program="Emergency Shelter",
+            exit_destination="Transitional housing",
+            **FOLLOWUPS_DONE,
+        ),
+        # ES exit to homelessness: not successful.
+        make_row(
+            VALID_EXITED,
+            client_id="C-2",
+            household_id="H-2",
+            program="Emergency Shelter",
+            exit_destination="Emergency shelter",
+            **FOLLOWUPS_DONE,
+        ),
+        # A successful exit in another program must not count toward SN-6.
+        make_row(
+            VALID_EXITED,
+            client_id="C-3",
+            household_id="H-3",
+            program="Rapid Re-Housing",
+            exit_destination="Homeownership",
+            **FOLLOWUPS_DONE,
+        ),
+    ]
+    prepared = prepare_dataset(make_source_df(rows), hp_profile)
+    analytics = compute_analytics(prepared, hp_profile, as_of=TODAY)
+    by_id = {m.id: m for m in analytics.measures}
+    sn6 = by_id["SN-6"]
+    assert sn6.program == "Emergency Shelter"
+    assert sn6.actual == 50.0  # 1 of 2 ES exits successful; RRH exit excluded
+    assert sn6.met is False
+    assert sn6.small_sample is True
+
+
 def test_currency_measure_direction(rrh_profile):
     rows = [
         make_row(

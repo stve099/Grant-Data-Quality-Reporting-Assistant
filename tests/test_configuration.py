@@ -50,6 +50,22 @@ def test_successful_destinations_follow_categories(rrh_profile):
     assert "Transitional housing" in rrh_profile.successful_destinations
 
 
+def test_diversion_counts_temporary_housing(hp_profile, profile):
+    # homeless_prevention defines success as diversion: stable OR temporary
+    # housing. housing_stability counts permanent housing only, so the same
+    # temporary destination is successful under one and not the other.
+    assert "Transitional housing" in hp_profile.successful_destinations
+    assert "Transitional housing" not in profile.successful_destinations
+
+
+def test_single_followup_schedule(hp_profile):
+    # A prevention season has one short check-in, not the 3/6/12-month ladder.
+    # The follow-up rule IDs are positional (DQ-05{i}), so a one-entry schedule
+    # means only DQ-050 can ever fire.
+    assert len(hp_profile.followup_schedule) == 1
+    assert hp_profile.followup_schedule[0].key == "3_month"
+
+
 def _base_profile_dict() -> dict:
     return yaml.safe_load((CONFIG_DIR / "housing_stability.yaml").read_text(encoding="utf-8"))
 

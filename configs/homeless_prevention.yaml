@@ -194,13 +194,15 @@ severity_overrides:
   DQ-005: medium
   DQ-002: medium
 
+# blocking_rules is additive over the rules that block by default, so the
+# first three are listed to document the funder's intent (they block regardless)
+# and only DQ-033 is actually elevated — it is registered blocking=False and
+# would not block unless a profile lists it.
 blocking_rules:
-  - DQ-004            # missing exit destination blocks submission
-  - DQ-010            # duplicate enrollments block submission
-  - DQ-030            # impossible date order blocks submission
-  - DQ-033            # status contradicts exit date — not blocking by default,
-                     # elevated here because this funder rejects inconsistent
-                     # exit documentation outright
+  - DQ-004            # missing exit destination (blocking by default)
+  - DQ-010            # duplicate enrollments (blocking by default)
+  - DQ-030            # exit before enrollment (blocking by default)
+  - DQ-033            # status contradicts exit date — elevated, not default
 
 report:
   title: Safe Nights Prevention Grant — Winter Season Report

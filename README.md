@@ -284,13 +284,16 @@ calculation.
 
 ## Grant profiles
 
-Profiles live in [`configs/`](configs/) and drive the whole pipeline. Two synthetic examples
+Profiles live in [`configs/`](configs/) and drive the whole pipeline. Three synthetic examples
 are included:
 
 - **housing_stability** — annual period, permanent-housing outcome definitions, 3/6/12-month
   follow-up schedule, five performance measures.
 - **rapid_rehousing** — semi-annual period, broader successful-exit definition (temporary
   housing counts), stricter blocking rules, severity overrides, 3/6-month schedule.
+- **homeless_prevention** — winter-season period, diversion success definition, a single
+  3-month follow-up, an Emergency-Shelter-scoped measure, and a blocking rule elevated
+  from non-blocking by default.
 
 A profile defines: grant metadata, reporting period, programs + aliases, field mappings
 (source header → canonical column), required fields, controlled vocabularies, follow-up

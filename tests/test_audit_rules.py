@@ -192,6 +192,26 @@ def test_blocking_rules_can_elevate_a_non_default_rule(hp_profile, profile):
     assert default_issue not in default_audit.blocking_issues
 
 
+def test_single_followup_schedule_emits_one_overdue_rule(hp_profile):
+    # The rule IDs are positional (DQ-05{i}), so a one-entry schedule must mean
+    # only DQ-050 can fire — DQ-051/DQ-052 do not exist under this profile.
+    rows = [make_row(VALID_EXITED, followup_3m="")]
+    fired = fired_rules(audit_source_rows(rows, hp_profile))
+    assert fired["DQ-050"] == {"C-2"}
+    assert "DQ-051" not in fired
+    assert "DQ-052" not in fired
+
+
+def test_severity_overrides_to_medium(hp_profile):
+    # homeless_prevention raises missing demographic fields (DQ-005) and missing
+    # entry income (DQ-002) from low to medium — both default low.
+    rows = [make_row(VALID_EXITED, gender="", entry_income="")]
+    audit = audit_source_rows(rows, hp_profile)
+    by_rule = {i.rule_id: i for i in audit.issues}
+    assert by_rule["DQ-005"].severity == Severity.MEDIUM
+    assert by_rule["DQ-002"].severity == Severity.MEDIUM
+
+
 def test_issue_metadata_completeness(profile):
     """Every finding must carry the full metadata contract from the spec."""
     rows = [make_row(client_id=""), dict(VALID_ACTIVE)]
