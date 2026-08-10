@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.9.1 — 2026-08-10
+
+The model-based eval grader produced a stable false positive, found by running
+`eval --model-grader` against the dataset and chasing the one case that always
+failed.
+
+### Fixed
+- **The model grader no longer fails `measures-below-target` for an
+  inapplicable requirement.** Running `eval --model-grader --runs 3` showed
+  `measures-below-target` failing the `model_rubric` grader in every run — a
+  "stable" failure, the kind the stability filter exists to surface. It was a
+  false positive: the rubric said "Flags small-sample measures," but the flawed
+  sample has *no* small-sample measures (every measure and program has a
+  denominator ≥ 10), so the requirement was vacuously satisfied. The judge also
+  misread the answer's correct grant-level-vs-program-level scope distinction as
+  a self-contradiction. Root cause: the judge sees only the question, rubric, and
+  answer — not the fact sheet — so it cannot tell whether a conditional rubric
+  step applied. Two fixes: the rubric is now explicitly conditional ("if any
+  measures are small-sample, flags that; if none are, no flag is required"),
+  matching the conditional phrasing the `small-sample-caution` and
+  `outcomes-best-program` rubrics already used; and the judge's system prompt
+  now tells it not to fail a conditional step unless the answer's own text shows
+  the condition held, and not to read a scope distinction as a contradiction.
+  After the fix the same 3-run suite goes from 10/12, 10/12, 11/12 (one stable
+  failure) to 12/12, 11/12, 12/12 (no stable failure; the lone 11/12 is the
+  transient variance a hosted model is expected to produce). The broader lesson
+  — that a hosted-model grader's false positives can be stable, so it is a
+  human-review signal rather than a blocking gate — stands, and the code graders
+  remain the reliable gate.
+
 ## 1.9.0 — 2026-08-10
 
 The profile generator now produces a draft that validates as-is, found by

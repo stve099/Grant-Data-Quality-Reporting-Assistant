@@ -102,7 +102,8 @@ def default_cases() -> list[EvalCase]:
             graders=["grounded_numbers", "no_client_identifiers"],
             rubric=(
                 "States how many measures were met and names any that were missed with "
-                "their actual and target values. Flags small-sample measures."
+                "their actual and target values. If any measures are small-sample, flags "
+                "that; if none are, no small-sample flag is required."
             ),
         ),
         EvalCase(
