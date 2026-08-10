@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.9.2 — 2026-08-10
+
+A coverage-driven hardening pass on the PII pre-flight scanner and the CI
+pipeline that exercises it on Windows.
+
+### Added
+- **Adversarial branch tests for `security/pii.py`.** The scanner now has
+  targeted coverage for every branch in its two-sided detection: value-detected
+  messages include the hit count, bogus date-shaped values do not count as dates
+  of birth, the value loop honors the findings cap, and a value-detected
+  identifier does not change the audit score. A contract test asserts that
+  sensitive and malicious cell payloads are never echoed back verbatim in
+  warnings.
+
+### Changed
+- **CI now runs a Windows smoke job.** A GitHub Actions `windows-smoke` job
+  executes `grant-assistant compare` on a real Windows runner, guarding against
+  the cp1252 console encoding regressions that `CliRunner` cannot catch.
+
 ## 1.9.1 — 2026-08-10
 
 The model-based eval grader produced a stable false positive, found by running
