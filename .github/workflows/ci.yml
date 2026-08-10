@@ -94,3 +94,42 @@ jobs:
           test -f ci_out/grant_report.html
           test -f ci_out/grant_report.docx
           test -f ci_out/audit_workbook.xlsx
+
+  windows-smoke:
+    name: Windows CLI smoke test (cp1252 console guard)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        # v7 is the highest floating major astral-sh publishes; later releases
+        # exist only as exact tags (v9.0.0). v7 already runs on node24, which is
+        # the point of the bump, so track the major rather than pin a patch.
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        env:
+          UV_LINK_MODE: copy
+        run: uv sync
+
+      - name: CLI help
+        run: uv run grant-assistant --help
+
+      - name: Validate profiles
+        run: uv run grant-assistant validate-config
+
+      - name: Run the compare command on a real Windows console
+        # The compare command once crashed here because Unicode arrows could not
+        # be encoded to cp1252. A real Windows runner is the only regression
+        # guard that exercises the actual console codec.
+        run: |
+          uv run grant-assistant generate-sample-data --output ci_sample
+          uv run grant-assistant compare ci_sample/housing_program_clean.csv ci_sample/housing_program_flawed.csv --profile housing_stability --records --records-output ci_out/record_diff.csv
+
+      - name: Check outputs exist
+        shell: pwsh
+        run: |
+          if (-not (Test-Path ci_out/record_diff.csv)) { throw "record_diff.csv missing" }
+          if (-not (Test-Path ci_sample/housing_program_flawed.csv)) { throw "flawed sample missing" }
