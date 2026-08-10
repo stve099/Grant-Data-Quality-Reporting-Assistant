@@ -19,9 +19,7 @@
     ],
     "deny": [
       "Read(./.env)",
-      "Read(./.env.*)",
-      "Bash(git push:*)",
-      "PowerShell(git push:*)"
+      "Read(./.env.*)"
     ]
   },
   "env": {
