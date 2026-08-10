@@ -21,6 +21,7 @@ import streamlit as st
 from grant_assistant import schema
 from grant_assistant.agents import DataAnalystAgent, get_provider
 from grant_assistant.agents.provider import ai_available
+from grant_assistant.agents.workflows import should_stream
 from grant_assistant.analytics import compute_analytics
 from grant_assistant.analytics.charts import (
     demographic_chart,
@@ -80,6 +81,20 @@ PAGES = [page for _, pages in NAV for page in pages]
 
 def _loaded() -> bool:
     return "pipeline" in st.session_state
+
+
+@st.cache_data(show_spinner=False)
+def _profile_label(profiles: dict[str, Path], profile_id: str) -> str:
+    """Human label for a profile id, for the selector.
+
+    Falls back to the id when the YAML will not load — the selector still has to
+    render so the user can pick a different profile and read the error, rather
+    than the page dying on the invalid one.
+    """
+    try:
+        return load_profile_file(profiles[profile_id]).grant_name
+    except (ProfileValidationError, KeyError, OSError):
+        return profile_id
 
 
 def _agent() -> DataAnalystAgent:
@@ -156,8 +171,16 @@ def page_upload() -> None:
         if not profiles:
             st.error("No profiles found in configs/. Add a YAML profile to continue.")
             return
+        # Show the grant name, not the profile id. The id is an internal key —
+        # a user picking their funder should see "Stable Homes Grant", not
+        # "housing_stability" — but the id stays the selected value because it
+        # is what every other layer keys on.
         profile_id = st.selectbox(
-            "Grant profile", sorted(profiles), key="profile_choice", label_visibility="collapsed"
+            "Grant profile",
+            sorted(profiles),
+            key="profile_choice",
+            label_visibility="collapsed",
+            format_func=lambda pid: _profile_label(profiles, pid),
         )
         try:
             profile = load_profile_file(profiles[profile_id])
@@ -771,11 +794,14 @@ def page_chat() -> None:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    stream_ok = st.toggle(
-        "Stream responses",
-        value=True,
-        help="Render the answer as it is generated. Turn off to let the agent use its "
-        "lookup tools, which needs the full response before replying.",
+    response_mode = st.radio(
+        "Response mode",
+        ["Automatic", "Always stream", "Always use tools"],
+        horizontal=True,
+        help="Automatic streams narrative questions and uses the lookup tools for "
+        "anything that needs a specific figure. Streaming cannot run the tool loop, "
+        "so a streamed number comes from the fact sheet rather than a traced "
+        "retrieval — which is why picking per question was never the user's job.",
         disabled=not agent.ai_enabled,
     )
 
@@ -783,13 +809,22 @@ def page_chat() -> None:
     if question:
         with st.chat_message("user"):
             st.markdown(question)
+        if response_mode == "Always stream":
+            stream_this = True
+        elif response_mode == "Always use tools":
+            stream_this = False
+        else:
+            stream_this = should_stream(question)
+
         with st.chat_message("assistant"):
-            if stream_ok and agent.ai_enabled:
+            if stream_this and agent.ai_enabled:
                 answer = st.write_stream(agent.ask_stream(question, history=history[-8:]))
             else:
-                with st.spinner("Analyzing…"):
+                with st.spinner("Retrieving values…" if agent.ai_enabled else "Analyzing…"):
                     answer = agent.ask(question, history=history[-8:])
                     st.markdown(answer)
+                if agent.ai_enabled and response_mode == "Automatic":
+                    st.caption("Answered with lookup tools, so every figure is retrieved.")
         history.append({"role": "user", "content": question})
         history.append({"role": "assistant", "content": str(answer)})
 

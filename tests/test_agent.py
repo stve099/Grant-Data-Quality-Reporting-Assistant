@@ -170,3 +170,53 @@ def test_executive_summary_deterministic_without_ai(agent, analytics_flawed):
 def test_narrated_insights_without_ai_returns_markdown(agent):
     text = agent.narrated_insights()
     assert "### Key Findings" in text
+
+
+# -- Response routing --------------------------------------------------------
+#
+# Streaming cannot run the tool loop, so a streamed number comes from the fact
+# sheet rather than a traced retrieval. Which path a question takes therefore
+# matters, and it is not something a user can be expected to judge.
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Summarize grant outcomes for the reporting period.",
+        "Give me an executive summary for leadership.",
+        "Did Rapid Re-Housing cause better outcomes than shelter?",
+        "Are any metrics distorted by small sample sizes?",
+    ],
+)
+def test_narrative_questions_stream(question):
+    """The fact sheet already carries what these need."""
+    from grant_assistant.agents.workflows import should_stream
+
+    assert should_stream(question) is True
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What is the permanent housing rate?",
+        "Which program had the most exits?",
+        "How many follow-ups are overdue?",
+        "What was the median income change?",
+        "Which measures are below target?",
+        "What data quality issues are there?",
+        "What are the enrollment trends?",
+        "What is the average credit score?",
+    ],
+)
+def test_lookup_questions_use_the_tools(question):
+    """Anything asking for a figure must take the traceable path."""
+    from grant_assistant.agents.workflows import should_stream
+
+    assert should_stream(question) is False
+
+
+def test_an_unrecognized_question_uses_the_tools():
+    """The safe default: a question we cannot classify gets the traced path."""
+    from grant_assistant.agents.workflows import should_stream
+
+    assert should_stream("zzz qqq") is False

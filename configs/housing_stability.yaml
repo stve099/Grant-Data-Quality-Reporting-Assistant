@@ -1,8 +1,8 @@
-# Housing Stability Grant — example reporting profile (synthetic).
+# Stable Homes Grant — example reporting profile (synthetic).
 # See docs/creating_profiles.md for a field-by-field guide.
 
 profile_id: housing_stability
-grant_name: Housing Stability Grant
+grant_name: Stable Homes Grant
 grantor: Example State Housing Trust Fund
 description: >
   Annual outcomes grant funding emergency shelter, rapid re-housing, and
@@ -177,5 +177,5 @@ severity_overrides: {}
 blocking_rules: []
 
 report:
-  title: Housing Stability Grant — Annual Outcome Report
+  title: Stable Homes Grant — Annual Outcome Report
   prepared_by: Program Data & Evaluation Team

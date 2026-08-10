@@ -1,9 +1,9 @@
-# Rapid Re-Housing Outcomes Grant — example reporting profile (synthetic).
+# Bridge to Home Grant — example reporting profile (synthetic).
 # Demonstrates a second funder view over the same data: different measures,
 # stricter blocking rules, a shorter follow-up schedule, and a mid-year period.
 
 profile_id: rapid_rehousing
-grant_name: Rapid Re-Housing Outcomes Grant
+grant_name: Bridge to Home Grant
 grantor: Example Community Foundation
 description: >
   Outcomes-based grant emphasizing rapid placement into permanent housing and
@@ -185,5 +185,5 @@ blocking_rules:
   - DQ-030            # impossible date order blocks submission
 
 report:
-  title: Rapid Re-Housing Outcomes Grant — Semi-Annual Report
+  title: Bridge to Home Grant — Semi-Annual Report
   prepared_by: Program Data & Evaluation Team

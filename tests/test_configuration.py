@@ -21,7 +21,7 @@ def test_list_profiles_finds_both_examples():
 
 def test_load_profile_by_id(profile):
     assert profile.profile_id == "housing_stability"
-    assert profile.grant_name == "Housing Stability Grant"
+    assert profile.grant_name == "Stable Homes Grant"
     assert len(profile.programs) == 3
     assert profile.reporting_period.start.year == 2024
 

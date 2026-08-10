@@ -289,8 +289,8 @@ Create configuration files, preferably YAML, that allow different grants or prog
 
 Include at least two synthetic example profiles, such as:
 
-- Housing Stability Grant
-- Rapid Re-Housing Outcomes Grant
+- Stable Homes Grant
+- Bridge to Home Grant
 
 Provide clear documentation for creating additional profiles.
 

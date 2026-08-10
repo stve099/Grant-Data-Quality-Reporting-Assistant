@@ -102,6 +102,27 @@ def classify_question(question: str) -> Intent:
     return Intent.UNKNOWN
 
 
+#: Intents whose answers are narrative rather than a lookup. The fact sheet
+#: already carries what they need, so streaming costs nothing and the answer
+#: starts appearing immediately.
+#:
+#: Everything else gets the tool loop. That is slower — several rounds before a
+#: word appears — but the numbers are retrieved through typed tools and are
+#: traceable to a calculation, which matters more for a figure someone will put
+#: in a funder report than a few seconds of latency does.
+_NARRATIVE_INTENTS = frozenset({Intent.SUMMARY, Intent.CAUSAL, Intent.CAVEATS})
+
+
+def should_stream(question: str) -> bool:
+    """Whether a question can be answered by streaming rather than tool lookups.
+
+    Asking the user to choose was the wrong design: they have no way to know
+    which questions need a lookup, and the default sent most traffic down the
+    path that bypasses the tools entirely.
+    """
+    return classify_question(question) in _NARRATIVE_INTENTS
+
+
 def run_parallel[T, R](
     items: Sequence[T],
     work: Callable[[T], R],

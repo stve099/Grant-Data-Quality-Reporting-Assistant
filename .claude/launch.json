@@ -6,6 +6,7 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": [
         "run",
+        "--link-mode=copy",
         "streamlit",
         "run",
         "src/grant_assistant/ui/app.py",

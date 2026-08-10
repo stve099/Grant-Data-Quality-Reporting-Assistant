@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.6.1 — 2026-08-10
+
+The chat asked the user to pick how the analyst should answer, and the profile
+selector showed an internal id where a grant name belonged.
+
+### Changed
+- **The analyst picks streaming versus tool lookup; the user no longer has to.**
+  A "Stream responses" toggle sat on the chat page defaulting to *on*, which
+  sent most questions down a path that bypasses the lookup tools entirely.
+  Streaming cannot run the tool loop, so a streamed number comes from the fact
+  sheet rather than a traced retrieval — the right answer for "summarize the
+  period" but the wrong one for "what is the permanent housing rate", and a
+  user picking a funder has no way to know which is which. The toggle is now a
+  three-way `Automatic / Always stream / Always use tools`. `Automatic` routes
+  by `should_stream`: narrative intents (`summary`, `causal`, `caveats`)
+  stream because the fact sheet already carries what they need; everything
+  else — including anything the classifier cannot recognize — takes the tool
+  loop so every figure is retrieved and traceable. A caption notes when the
+  traced path was used.
+- **The example grant profiles are renamed.** "Housing Stability Grant" →
+  "Stable Homes Grant" and "Rapid Re-Housing Outcomes Grant" → "Bridge to Home
+  Grant" in `grant_name` and the report title. The `profile_id`s are unchanged
+  because every layer keys on them; only the display label moved. Example
+  reports and screenshots regenerated to match.
+- **The profile selector shows the grant name**, not the profile id. A user
+  picking their funder now sees "Stable Homes Grant" rather than
+  "housing_stability". The id stays the selected value, and a profile that
+  fails to load falls back to its id so the selector still renders and the
+  error can be read.
+
+### Fixed
+- The Streamlit launch config passes `--link-mode=copy`, so the editable
+  install survives on OneDrive without a manual env var.
+
 ## 1.6.0 — 2026-08-10
 
 Two standard measures the tool was missing, a way to gate a pipeline on data
