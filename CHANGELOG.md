@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **CI now runs the suite twice: once lean, once with every optional extra.** The existing
+  test job omits `pdf`, `pptx`, and `charts` on purpose — it is the guard that optional extras
+  degrade rather than crash — but that meant 18 tests silently skipped and `pptx_report.py` sat
+  at 15% coverage while shipping a documented feature and a committed example deck. The new
+  job installs `--all-extras`, installs the browser the PDF backend drives, asserts every
+  backend is actually present before running, and executes 43 tests the lean job never reaches.
+
 ## 1.10.0 — 2026-08-10
 
 This pass implements the adoption improvements identified in the repository review: easier

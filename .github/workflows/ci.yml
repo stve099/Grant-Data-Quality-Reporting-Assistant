@@ -63,6 +63,51 @@ jobs:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
 
+  tests-all-extras:
+    name: Tests (all optional extras)
+    runs-on: ubuntu-latest
+    # The job above deliberately omits pdf/pptx/charts: it is the guard that
+    # optional extras degrade rather than crash. That means it *skips* every test
+    # of the PDF, PowerPoint, and static-chart renderers — pptx_report.py sat at
+    # 15% coverage in CI while shipping a documented feature and a committed
+    # example deck. This job installs everything so those paths actually run.
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        # v7 is the highest floating major astral-sh publishes; later releases
+        # exist only as exact tags (v9.0.0). v7 already runs on node24, which is
+        # the point of the bump, so track the major rather than pin a patch.
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Install the headless browser the PDF backend drives
+        # pdf_backend() probes only for the playwright import, so installing the
+        # extra makes the PDF tests run. Without the browser binary they would
+        # then fail rather than skip.
+        run: uv run playwright install --with-deps chromium
+
+      - name: Confirm every optional backend is actually present
+        # A silent skip here would defeat the entire point of this job.
+        run: |
+          uv run python -c "
+          import importlib.util as u
+          from grant_assistant.reporting.pdf_report import pdf_backend
+          from grant_assistant.reporting.chart_images import chart_backend_available
+          assert pdf_backend() is not None, 'no PDF backend'
+          assert chart_backend_available(), 'no static-chart backend'
+          for name in ('pptx', 'mcp', 'openai'):
+              assert u.find_spec(name) is not None, name
+          print('all optional backends present')
+          "
+
+      - name: Run tests
+        run: uv run pytest
+
   smoke:
     name: CLI smoke test
     runs-on: ubuntu-latest
