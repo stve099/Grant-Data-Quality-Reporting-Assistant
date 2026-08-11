@@ -5,7 +5,9 @@ Word report and retypes the headline numbers into PowerPoint — the manual
 retyping this project removes everywhere else.
 
 The deck consumes the same :class:`ReportData` as the HTML and Word reports, so
-a number can never differ between them: there is one source and three renderers.
+a number can never differ between them: there is one source and four renderers
+(HTML, PDF, Word, and this deck), and one profile controls the branding and the
+section selection for all of them.
 It is deliberately short. A deck is a summary; the report remains the artifact
 with the detail, and slides that try to carry everything get read by nobody.
 

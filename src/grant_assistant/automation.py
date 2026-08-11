@@ -7,6 +7,7 @@ invocation audits, records history, writes a report, and can send one summary em
 
 from __future__ import annotations
 
+import copy
 import os
 import smtplib
 import ssl
@@ -20,6 +21,14 @@ from grant_assistant.history import record_run
 from grant_assistant.models import AuditResult
 from grant_assistant.reporting import build_report_data, write_html_report
 from grant_assistant.workflow import PipelineResult, run_pipeline
+
+#: Values that disable TLS. Anything else keeps it on, including a typo — the
+#: failure mode of an unrecognized value must be "still encrypted".
+_TLS_OFF = frozenset({"false", "0", "no", "off"})
+
+
+def _tls_enabled(raw: str) -> bool:
+    return raw.strip().casefold() not in _TLS_OFF
 
 
 @dataclass(frozen=True)
@@ -69,19 +78,27 @@ def send_audit_email(
     sender: str,
     use_tls: bool = True,
 ) -> None:
-    """Send one summary through an operator-supplied SMTP relay."""
+    """Send one summary through an operator-supplied SMTP relay.
+
+    The caller's message is not modified: assigning headers in place would append a
+    second From/To on a message sent twice, which is exactly what a retrying
+    scheduler does.
+    """
     if not recipients:
         raise ValueError("At least one email recipient is required.")
     if username and not use_tls:
         raise ValueError("SMTP credentials require TLS.")
-    message["From"] = sender
-    message["To"] = ", ".join(recipients)
+    outgoing = copy.deepcopy(message)
+    del outgoing["From"]
+    del outgoing["To"]
+    outgoing["From"] = sender
+    outgoing["To"] = ", ".join(recipients)
     with smtplib.SMTP(host, port, timeout=30) as client:
         if use_tls:
             client.starttls(context=ssl.create_default_context())
         if username:
             client.login(username, password)
-        client.send_message(message)
+        client.send_message(outgoing)
 
 
 def run_scheduled_audit(
@@ -93,8 +110,14 @@ def run_scheduled_audit(
     label: str = "scheduled",
     recipients: list[str] | None = None,
     config_dir: str | Path | None = None,
+    dry_run: bool = False,
 ) -> ScheduledAuditResult:
-    """Run, persist, report, and optionally notify for one scheduled invocation."""
+    """Run, persist, report, and optionally notify for one scheduled invocation.
+
+    ``dry_run`` still validates the SMTP configuration and builds the message, but
+    connects to nothing. Verifying a relay setup should not require mailing a real
+    person, which is the only way an operator could previously test this.
+    """
     result = run_pipeline(data_file, profile, config_dir)
     run_id = record_run(
         result.profile,
@@ -119,16 +142,24 @@ def run_scheduled_audit(
                 "GRANT_ASSISTANT_SMTP_FROM are not configured."
             )
         message = build_audit_email(result.profile, result.audit, result.analytics, str(data_file))
-        send_audit_email(
-            message,
-            recipients,
-            host=host,
-            port=int(os.environ.get("GRANT_ASSISTANT_SMTP_PORT", "587")),
-            username=os.environ.get("GRANT_ASSISTANT_SMTP_USERNAME", ""),
-            password=os.environ.get("GRANT_ASSISTANT_SMTP_PASSWORD", ""),
-            sender=sender,
-            use_tls=os.environ.get("GRANT_ASSISTANT_SMTP_TLS", "true").casefold() != "false",
-        )
-        email_sent = True
+        username = os.environ.get("GRANT_ASSISTANT_SMTP_USERNAME", "")
+        use_tls = _tls_enabled(os.environ.get("GRANT_ASSISTANT_SMTP_TLS", "true"))
+        if dry_run:
+            # Same precondition the real send enforces, so a dry run cannot pass
+            # against a configuration that would be rejected in production.
+            if username and not use_tls:
+                raise ValueError("SMTP credentials require TLS.")
+        else:
+            send_audit_email(
+                message,
+                recipients,
+                host=host,
+                port=int(os.environ.get("GRANT_ASSISTANT_SMTP_PORT", "587")),
+                username=username,
+                password=os.environ.get("GRANT_ASSISTANT_SMTP_PASSWORD", ""),
+                sender=sender,
+                use_tls=use_tls,
+            )
+            email_sent = True
 
     return ScheduledAuditResult(result, run_id, report_path, email_sent)

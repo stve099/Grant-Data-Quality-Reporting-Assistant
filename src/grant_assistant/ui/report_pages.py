@@ -258,6 +258,28 @@ Full guide: `docs/creating_profiles.md`. Design tokens: `docs/design_system.md`.
         """
     )
 
+    with st.expander("Run this audit on a schedule"):
+        # The app deliberately runs no background scheduler, so the honest thing
+        # to offer here is the command an operator hands to their own scheduler.
+        st.markdown(
+            "This application does not run a background scheduler — Windows Task Scheduler, "
+            "cron, or your existing orchestrator controls timing. Each invocation audits, "
+            "records history, and writes an offline HTML report."
+        )
+        st.code(
+            "grant-assistant scheduled-audit extract.csv --profile housing_stability \\\n"
+            "  --output output/scheduled --db output/history.db --label nightly",
+            language="bash",
+        )
+        st.markdown(
+            "To email a summary, set the `GRANT_ASSISTANT_SMTP_*` variables from "
+            "`.env.example` and add `--email-to`. Verify the relay without mailing anyone:"
+        )
+        st.code(
+            "grant-assistant scheduled-audit extract.csv --email-to team@example.org --dry-run",
+            language="bash",
+        )
+
     tab1, tab2, tab3 = st.tabs(["Canonical schema", "Measure metrics", "Audit rules"])
     with tab1:
         st.dataframe(

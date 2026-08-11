@@ -15,7 +15,12 @@ from grant_assistant.configuration import (
     list_profiles,
     load_profile_file,
 )
-from grant_assistant.ingestion import IngestionError, load_dataset, prepare_dataset
+from grant_assistant.ingestion import (
+    IngestionError,
+    load_dataset,
+    merge_uploaded_datasets,
+    prepare_dataset,
+)
 from grant_assistant.ui import theme
 from grant_assistant.ui.state import (
     loaded as _loaded,
@@ -102,12 +107,24 @@ def page_upload() -> None:
             "`housing_program_flawed.csv` contains 23 documented injected error types."
         )
 
+        related = st.file_uploader(
+            "Related extracts to flatten in (optional)",
+            type=["csv", "xlsx", "xls", "xlsm"],
+            accept_multiple_files=True,
+            help="One row per client in each related file. Columns already present in the "
+            "primary extract are kept; related files only add new ones.",
+        )
+
         theme.panel_title("3 · Run pipeline")
         if uploaded is None:
             st.info("Upload a file to enable the audit and analytics pipeline.")
         elif st.button("Run audit + analytics", type="primary", use_container_width=True):
             try:
                 raw = load_dataset(io.BytesIO(uploaded.getvalue()), filename=uploaded.name)
+                if related:
+                    raw = merge_uploaded_datasets(
+                        raw, [(f.name, f.getvalue()) for f in related], profile
+                    )
                 prepared = prepare_dataset(raw, profile)
                 audit = run_audit(prepared, profile)
                 analytics = compute_analytics(prepared, profile)
@@ -123,9 +140,10 @@ def page_upload() -> None:
             }
             for key in ("agent", "chat_history", "report_html", "report_docx", "report_pdf"):
                 st.session_state.pop(key, None)
+            merged_note = f" (flattened with {len(related)} related file(s))" if related else ""
             st.success(
-                f"Processed **{uploaded.name}** — {len(prepared.df)} rows, data quality score "
-                f"{audit.overall_score:.1f}/100 (grade {audit.grade})."
+                f"Processed **{uploaded.name}**{merged_note} — {len(prepared.df)} rows, data "
+                f"quality score {audit.overall_score:.1f}/100 (grade {audit.grade})."
             )
             if audit.pii_warnings:
                 st.error(

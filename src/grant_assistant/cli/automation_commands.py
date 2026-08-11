@@ -37,6 +37,13 @@ def register_automation_commands(app: typer.Typer) -> None:
             list[str] | None,
             typer.Option("--email-to", help="Email recipient; repeat for multiple recipients."),
         ] = None,
+        dry_run: Annotated[
+            bool,
+            typer.Option(
+                "--dry-run",
+                help="Validate the SMTP configuration and build the summary without sending it.",
+            ),
+        ] = False,
     ) -> None:
         """Run one scheduler-safe audit, record history, report, and optionally email."""
         from grant_assistant.automation import run_scheduled_audit
@@ -54,6 +61,7 @@ def register_automation_commands(app: typer.Typer) -> None:
                 label=label,
                 recipients=email_to,
                 config_dir=config_dir,
+                dry_run=dry_run,
             )
         except Exception as exc:
             typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
@@ -64,3 +72,8 @@ def register_automation_commands(app: typer.Typer) -> None:
         )
         if result.email_sent:
             typer.secho("Email summary sent.", fg=typer.colors.GREEN)
+        elif dry_run and email_to:
+            typer.secho(
+                f"Dry run: SMTP configuration is valid; no message sent to {', '.join(email_to)}.",
+                fg=typer.colors.YELLOW,
+            )

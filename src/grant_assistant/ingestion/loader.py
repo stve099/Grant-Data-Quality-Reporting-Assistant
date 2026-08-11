@@ -29,7 +29,12 @@ class IngestionError(Exception):
     """Raised when an uploaded file cannot be read or prepared."""
 
 
-def _normalize_header(header: str) -> str:
+def normalize_header(header: str) -> str:
+    """Canonical form for header matching: case, spacing, and separators folded.
+
+    Public because relational merging matches join-key columns the same way
+    header mapping does; the two must never disagree about what a header means.
+    """
     return str(header).strip().casefold().replace("-", " ").replace("_", " ")
 
 
@@ -120,17 +125,17 @@ def prepare_dataset(df: pd.DataFrame, profile: GrantProfile) -> PreparedData:
     """
     lookup: dict[str, str] = {}
     for source_header, canonical in profile.field_mappings.items():
-        lookup[_normalize_header(source_header)] = canonical
+        lookup[normalize_header(source_header)] = canonical
     # Also accept canonical names themselves as headers.
     for canonical in schema.CANONICAL_COLUMNS:
-        lookup.setdefault(_normalize_header(canonical), canonical)
+        lookup.setdefault(normalize_header(canonical), canonical)
 
     mapped: dict[str, str] = {}
     unmapped: list[str] = []
     renames: dict[str, str] = {}
     seen_targets: set[str] = set()
     for col in df.columns:
-        target = lookup.get(_normalize_header(col))
+        target = lookup.get(normalize_header(col))
         if target and target not in seen_targets:
             renames[col] = target
             mapped[col] = target

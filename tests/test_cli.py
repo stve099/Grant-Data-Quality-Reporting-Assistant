@@ -861,3 +861,62 @@ def test_scheduled_audit_refuses_to_email_without_smtp_configuration(tmp_path, m
 
     assert result.exit_code == 2
     assert "GRANT_ASSISTANT_SMTP_HOST" in result.output
+
+
+def test_scheduled_audit_dry_run_validates_smtp_without_sending(tmp_path, monkeypatch):
+    """Verifying a relay must not require mailing a real person."""
+
+    def explode(*args, **kwargs):
+        raise AssertionError("dry run must not open an SMTP connection")
+
+    monkeypatch.setattr("grant_assistant.automation.smtplib.SMTP", explode)
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_FROM", "reports@example.org")
+
+    result = _run(
+        "scheduled-audit",
+        str(FLAWED),
+        "--output",
+        str(tmp_path / "out"),
+        "--db",
+        str(tmp_path / "h.db"),
+        "--email-to",
+        "reviewer@example.org",
+        "--dry-run",
+        "--config-dir",
+        str(CONFIG_DIR),
+    )
+
+    assert "Dry run: SMTP configuration is valid" in result.output
+    assert "Email summary sent." not in result.output
+    # The audit itself still ran: a dry run is about the email, not the work.
+    assert "Run #1 recorded" in result.output
+    assert list((tmp_path / "out").glob("*.html"))
+
+
+def test_scheduled_audit_dry_run_rejects_credentials_without_tls(tmp_path, monkeypatch):
+    """A dry run must not pass a config the real send would refuse."""
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_FROM", "reports@example.org")
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_USERNAME", "mailer")
+    monkeypatch.setenv("GRANT_ASSISTANT_SMTP_TLS", "false")
+
+    result = runner.invoke(
+        app,
+        [
+            "scheduled-audit",
+            str(FLAWED),
+            "--output",
+            str(tmp_path / "out"),
+            "--db",
+            str(tmp_path / "h.db"),
+            "--email-to",
+            "reviewer@example.org",
+            "--dry-run",
+            "--config-dir",
+            str(CONFIG_DIR),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "credentials require TLS" in result.output

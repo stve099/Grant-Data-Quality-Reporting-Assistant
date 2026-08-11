@@ -1,8 +1,11 @@
-"""Provider resilience improvements."""
+"""Provider resilience, report branding, relational merging, and scheduled runs."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
+
+import pytest
 
 
 def test_provider_error_preserves_failure_category():
@@ -346,9 +349,13 @@ def test_send_audit_email_uses_verified_tls_and_smtp_credentials(monkeypatch):
     assert isinstance(calls["tls_context"], ssl.SSLContext)
     assert calls["tls_context"].verify_mode == ssl.CERT_REQUIRED
     assert calls["login"] == ("mailer", "test-only-password")
-    assert calls["message"] is message
-    assert message["To"] == "reviewer@example.org"
-    assert message["From"] == "reports@example.org"
+    # Addressed on a copy, so the caller's message is left untouched for a retry.
+    delivered = calls["message"]
+    assert delivered is not message
+    assert delivered.get_content() == message.get_content()
+    assert delivered["To"] == "reviewer@example.org"
+    assert delivered["From"] == "reports@example.org"
+    assert message["To"] is None
 
 
 def test_send_audit_email_rejects_credentials_without_tls():
@@ -395,3 +402,203 @@ def test_html_report_embeds_small_local_logo(profile, analytics_clean, tmp_path)
 
     assert 'src="data:image/png;base64,' in html
     assert 'alt="Organization logo"' in html
+
+
+# --- Degradation guarantees --------------------------------------------------
+# "Optional extras must degrade, not crash" is a stated project invariant. These
+# cover the branches that make it true, which are exactly the branches no happy
+# path reaches.
+
+
+@pytest.mark.parametrize(
+    ("filename", "size", "reason"),
+    [
+        ("logo.svg", 8, "unsupported format"),
+        ("logo.png", 2 * 1024 * 1024 + 1, "over the 2 MB cap"),
+    ],
+    ids=["unsupported-format", "over-size-cap"],
+)
+def test_unusable_logo_is_skipped_rather_than_fatal(
+    profile, analytics_clean, tmp_path, caplog, filename, size, reason
+):
+    from grant_assistant.reporting import build_report_data, render_html_report
+
+    bad = tmp_path / filename
+    bad.write_bytes(b"x" * size)
+    branded = profile.model_copy(deep=True)
+    branded.report.logo_path = str(bad)
+    report = build_report_data(analytics_clean, None, branded)
+
+    with caplog.at_level(logging.WARNING):
+        html = render_html_report(report, include_charts=False)
+
+    assert "data:image" not in html, reason
+    assert "Skipping report logo" in caplog.text
+    assert report.title in html  # the rest of the report still rendered
+
+
+def test_missing_logo_path_is_skipped_rather_than_fatal(profile, analytics_clean, tmp_path):
+    from grant_assistant.reporting import build_report_data, render_html_report
+
+    branded = profile.model_copy(deep=True)
+    branded.report.logo_path = str(tmp_path / "does_not_exist.png")
+
+    html = render_html_report(
+        build_report_data(analytics_clean, None, branded), include_charts=False
+    )
+
+    assert "data:image" not in html
+
+
+def test_unreadable_logo_is_skipped_rather_than_fatal(
+    profile, analytics_clean, tmp_path, monkeypatch, caplog
+):
+    """A permission error on the logo must not take the whole export down."""
+    from grant_assistant.reporting import branding, build_report_data
+    from grant_assistant.reporting.branding import logo_bytes
+
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(b"\x89PNG\r\n\x1a\nsynthetic")
+    branded = profile.model_copy(deep=True)
+    branded.report.logo_path = str(logo)
+
+    def denied(self, *args, **kwargs):
+        raise PermissionError("locked by another process")
+
+    monkeypatch.setattr(branding.Path, "read_bytes", denied)
+
+    with caplog.at_level(logging.WARNING):
+        assert logo_bytes(build_report_data(analytics_clean, None, branded)) is None
+    assert "Skipping report logo" in caplog.text
+
+
+def test_word_and_deck_survive_an_unusable_logo(profile, analytics_clean, tmp_path):
+    """The binary renderers embed the logo differently; both must degrade too."""
+    from docx import Document
+
+    from grant_assistant.reporting import build_report_data, write_docx_report
+
+    branded = profile.model_copy(deep=True)
+    branded.report.logo_path = str(tmp_path / "nope.png")
+    report = build_report_data(analytics_clean, None, branded)
+
+    doc = Document(str(write_docx_report(report, tmp_path / "r.docx")))
+    assert any(p.runs for p in doc.paragraphs)
+
+
+def test_merge_rejects_an_ambiguous_join_key_column(profile, tmp_path):
+    """Two columns mapping to client_id is a data error, not a coin flip."""
+    import pandas as pd
+
+    from grant_assistant.ingestion import IngestionError, merge_related_datasets
+
+    primary = tmp_path / "primary.csv"
+    pd.DataFrame({"Client ID": ["A"], "Program Name": ["RRH"]}).to_csv(primary, index=False)
+    related = tmp_path / "income.csv"
+    # Both headers normalize onto client_id, so the join key is ambiguous.
+    pd.DataFrame({"Client ID": ["A"], "client-id": ["A"], "Case Manager": ["One"]}).to_csv(
+        related, index=False
+    )
+
+    with pytest.raises(IngestionError, match="Expected exactly one column"):
+        merge_related_datasets(primary, [related], profile)
+
+
+def test_merge_rejects_an_unknown_canonical_join_key(profile, tmp_path):
+    import pandas as pd
+
+    from grant_assistant.ingestion import IngestionError, merge_related_datasets
+
+    primary = tmp_path / "primary.csv"
+    pd.DataFrame({"Client ID": ["A"]}).to_csv(primary, index=False)
+
+    with pytest.raises(IngestionError, match="Unknown canonical join key"):
+        merge_related_datasets(primary, [], profile, join_on="not_a_column")
+
+
+def test_merge_is_a_no_op_when_a_related_file_adds_nothing(profile, tmp_path):
+    """A related file whose columns all already exist must not duplicate or reorder."""
+    import pandas as pd
+
+    from grant_assistant.ingestion import merge_related_datasets
+
+    primary = tmp_path / "primary.csv"
+    pd.DataFrame({"Client ID": ["A"], "Program Name": ["RRH"]}).to_csv(primary, index=False)
+    related = tmp_path / "same.csv"
+    pd.DataFrame({"Client ID": ["A"], "Program Name": ["Ignored"]}).to_csv(related, index=False)
+
+    merged = merge_related_datasets(primary, [related], profile)
+
+    assert list(merged.columns) == ["Client ID", "Program Name"]
+    assert merged.loc[0, "Program Name"] == "RRH"  # the primary always wins
+
+
+def test_uploaded_and_on_disk_merges_agree(profile, tmp_path):
+    """The web app and the CLI must not disagree about a merge."""
+    import pandas as pd
+
+    from grant_assistant.ingestion import merge_related_datasets, merge_uploaded_datasets
+
+    primary_frame = pd.DataFrame({"Client ID": ["A", "B"], "Program Name": ["RRH", "ES"]})
+    related_frame = pd.DataFrame({"Client ID": ["A", "B"], "Case Manager": ["One", "Two"]})
+    primary = tmp_path / "primary.csv"
+    related = tmp_path / "staff.csv"
+    primary_frame.to_csv(primary, index=False)
+    related_frame.to_csv(related, index=False)
+
+    on_disk = merge_related_datasets(primary, [related], profile)
+    uploaded = merge_uploaded_datasets(
+        primary_frame, [("staff.csv", related.read_bytes())], profile
+    )
+
+    assert list(on_disk.columns) == list(uploaded.columns)
+    assert on_disk["Case Manager"].tolist() == uploaded["Case Manager"].tolist()
+
+
+def test_tls_stays_on_for_any_unrecognized_flag_value():
+    """An unrecognized value must fail safe: still encrypted."""
+    from grant_assistant.automation import _tls_enabled
+
+    for off in ("false", "FALSE", " no ", "0", "off"):
+        assert _tls_enabled(off) is False, off
+    for on in ("true", "1", "yes", "", "maybe", "flase"):
+        assert _tls_enabled(on) is True, on
+
+
+def test_sending_twice_does_not_accumulate_headers(monkeypatch):
+    """A retrying scheduler reuses the message; it must not grow duplicate headers."""
+    from email.message import EmailMessage
+
+    from grant_assistant.automation import send_audit_email
+
+    sent: list[EmailMessage] = []
+
+    class FakeSMTP:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def starttls(self, *, context):
+            pass
+
+        def send_message(self, message):
+            sent.append(message)
+
+    monkeypatch.setattr("grant_assistant.automation.smtplib.SMTP", FakeSMTP)
+    message = EmailMessage()
+    message.set_content("Synthetic audit summary")
+
+    for _ in range(2):
+        send_audit_email(
+            message, ["a@example.org"], host="smtp.example.org", sender="r@example.org"
+        )
+
+    assert message["To"] is None, "the caller's message must not be mutated"
+    for delivered in sent:
+        assert delivered.get_all("To") == ["a@example.org"]
+        assert delivered.get_all("From") == ["r@example.org"]

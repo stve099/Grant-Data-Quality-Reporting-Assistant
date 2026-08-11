@@ -118,6 +118,8 @@ uv run grant-assistant merge-datasets enrollments.csv income.csv assessments.csv
 # One-shot command for Windows Task Scheduler/cron; records history and writes a report
 uv run grant-assistant scheduled-audit extract.csv --label "nightly"
 # Add --email-to data-team@example.org after configuring the SMTP variables in .env.example
+# Verify the SMTP setup without mailing anyone
+uv run grant-assistant scheduled-audit extract.csv --email-to data-team@example.org --dry-run
 
 # Gate a pipeline on the score, not just on blocking issues
 uv run grant-assistant audit extract.csv --fail-under 90
@@ -416,8 +418,9 @@ Publishing to GitHub and deploying a free live demo: see [PUBLISHING.md](PUBLISH
   in the HTML/PDF reports and dashboards).
 - Statistical trend rules (volume anomalies) use simple z-score/IQR heuristics, not
   forecasting models.
-- One enrollment row per client per program-stay is assumed (HMIS-style extract); use
-  `merge-datasets` to flatten one-to-one related exports first.
+- One enrollment row per client per program-stay is assumed (HMIS-style extract); flatten
+  one-to-one related exports first with `merge-datasets`, or by attaching them on the app's
+  Upload page.
 - Live AI calls require a provider key (Anthropic, OpenAI, or Ollama); the AI path is
   tested against fake providers, while the deterministic non-AI mode is the fully tested
   default.

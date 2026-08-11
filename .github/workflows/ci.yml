@@ -54,14 +54,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev --extra mcp --extra openai
 
-      - name: Run tests with coverage
-        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage-${{ matrix.python-version }}
-          path: coverage.xml
+      - name: Run tests
+        # Coverage is measured by the all-extras job below, not here. This job
+        # skips the PDF, PowerPoint, and static-chart tests by design, so its
+        # numbers understate those renderers badly enough to be misleading
+        # (pptx_report.py reads as 15% here and 98% with the extras installed).
+        run: uv run pytest
 
   tests-all-extras:
     name: Tests (all optional extras)
@@ -105,8 +103,16 @@ jobs:
           print('all optional backends present')
           "
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Run tests with coverage
+        # This is the only job that exercises every renderer, so it is the only
+        # one whose coverage figures describe the real project.
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage.xml
 
   smoke:
     name: CLI smoke test

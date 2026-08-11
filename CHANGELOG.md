@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Related extracts can be flattened in the web app.** The Upload page accepts optional
+  related files alongside the primary extract and merges them before the pipeline runs, so
+  `merge-datasets` is no longer CLI-only. Both entry points call one frame-level
+  implementation, which is what stops the app and the CLI from disagreeing about a merge.
+- **`scheduled-audit --dry-run`** validates the SMTP configuration and builds the summary
+  without connecting, so an operator can verify a relay without mailing a real person. It
+  enforces the same credentials-require-TLS rule as a live send, so a dry run cannot pass
+  against a configuration production would reject.
+- **The Configuration Help page explains scheduling** and shows the exact command to hand to
+  Task Scheduler or cron, rather than implying the app runs a scheduler of its own.
+
+### Changed
+
+- **Coverage is now measured by the all-extras job.** The lean job skips the PDF, PowerPoint,
+  and static-chart tests by design, so the figures it published understated those renderers
+  badly enough to mislead — `pptx_report.py` read as 15% there and 98% with the extras present.
+- **`normalize_header` is public.** Relational merging matched join-key columns through a
+  private loader helper; the two must agree about what a header means, so the contract is now
+  explicit rather than borrowed.
+- **`send_audit_email` no longer mutates the caller's message.** Addressing happened in place,
+  so a scheduler that retried a send accumulated duplicate `From`/`To` headers.
+- **`GRANT_ASSISTANT_SMTP_TLS` accepts the usual falsey spellings** (`false`, `0`, `no`, `off`).
+  Previously only the exact string `false` disabled TLS; anything else, including a typo, still
+  fails safe to encrypted.
+
+### Fixed
+
+- **The logo degradation paths are tested.** An unsupported format, an oversized file, a missing
+  path, and an unreadable file each warn and skip; none can take an export down. This is a stated
+  project invariant that had no test behind it.
+
 ## 1.10.1 — 2026-08-10
 
 ### Changed
