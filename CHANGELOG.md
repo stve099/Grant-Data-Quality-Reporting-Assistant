@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.11.2 — 2026-08-11
+
+### Fixed
+
+- **The demo landing page contradicted itself.** Arriving with `?profile=housing_stability`,
+  the profile picker still named whichever grant sorts first alphabetically, so the picker and
+  the sidebar disagreed about which profile produced the numbers on screen. The demo autoloader
+  now seeds the selector with the profile it actually loaded.
+- **It also asked for an upload it already had.** Step 3 keyed off the file-uploader widget
+  alone, so a visitor whose dataset was preloaded and audited was told to "upload a file to
+  enable the audit and analytics pipeline" directly beneath a "Loaded" pill. It now reports the
+  loaded file, its row count and score, and points at the Audit Dashboard — and still shows the
+  upload prompt when nothing is loaded. This is the first screen a demo visitor sees, so all
+  three states are now covered by tests.
+
 ## 1.11.1 — 2026-08-11
 
 ### Added

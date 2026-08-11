@@ -86,6 +86,11 @@ def _demo_autoload() -> None:
         "analytics": compute_analytics(prepared, profile),
         "filename": demo_path.name,
     }
+    # Point the Upload page's profile selector at what was actually loaded. Without
+    # this it falls back to the first profile alphabetically, so a demo visitor sees
+    # the picker naming one grant while the sidebar names another. Set before the
+    # widget is created, which this is: autoload runs ahead of routing.
+    st.session_state.setdefault("profile_choice", profile_id)
 
 
 def _select_page(group: str) -> None:

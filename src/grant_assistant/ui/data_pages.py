@@ -116,7 +116,22 @@ def page_upload() -> None:
         )
 
         theme.panel_title("3 · Run pipeline")
-        if uploaded is None:
+        if uploaded is None and _loaded():
+            # A demo visitor arrives with a dataset already audited. Telling them to
+            # upload one contradicts the "Loaded" pill above and sends them looking
+            # for work that is already done.
+            p = st.session_state["pipeline"]
+            audit = p["audit"]
+            st.success(
+                f"**{p['filename']}** is loaded and audited — {len(p['prepared'].df)} rows, "
+                f"data quality score {audit.overall_score:.1f}/100 (grade {audit.grade}). "
+                "Open **Audit Dashboard** in the left rail to see the findings."
+            )
+            st.caption(
+                "Upload a file above to audit your own extract instead. Changing the profile "
+                "applies to the next run, not to the dataset already loaded."
+            )
+        elif uploaded is None:
             st.info("Upload a file to enable the audit and analytics pipeline.")
         elif st.button("Run audit + analytics", type="primary", use_container_width=True):
             try:

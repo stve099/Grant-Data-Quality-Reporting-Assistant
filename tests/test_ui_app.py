@@ -305,3 +305,46 @@ def test_pii_warning_reaches_the_audit_dashboard(tmp_path, clean_df):
     # The page renders from session state, so seed it the way the app does.
     assert audit.pii_warnings, "expected the scan to flag the added column"
     assert any("Client Name" in w for w in audit.pii_warnings)
+
+
+# -- The demo landing page ----------------------------------------------------
+# This is the first screen a visitor to the hosted demo sees. Two things on it
+# used to contradict each other and the sidebar, which is worse than a bug in a
+# page nobody reaches.
+
+
+def test_demo_profile_selector_matches_the_loaded_profile(loaded_app):
+    """The picker must name the grant that was actually loaded.
+
+    It defaulted to the first profile alphabetically, so a visitor arriving with
+    ?profile=housing_stability saw the picker naming a different grant than the
+    sidebar, with no indication which one produced the numbers on screen.
+    """
+    _goto(loaded_app, "Upload & Profile")
+    assert not loaded_app.exception
+
+    loaded = loaded_app.session_state["pipeline"]["profile"]
+    assert loaded.profile_id == "housing_stability"
+    box = next((s for s in loaded_app.selectbox if s.label == "Grant profile"), None)
+    assert box is not None
+    # The selector's value is the profile id; format_func only changes the label.
+    assert box.value == loaded.profile_id
+
+
+def test_demo_landing_does_not_ask_for_an_upload_it_already_has(loaded_app):
+    """With data loaded, step 3 must report state, not demand work already done."""
+    _goto(loaded_app, "Upload & Profile")
+    assert not loaded_app.exception
+
+    text = _text_of(loaded_app)
+    assert "Upload a file to enable" not in text
+    assert "is loaded and audited" in text
+    assert "Audit Dashboard" in text
+
+
+def test_upload_prompt_still_appears_with_no_data():
+    """The prompt is right when there is genuinely nothing loaded."""
+    app = _app().run()
+    _goto(app, "Upload & Profile")
+    assert not app.exception
+    assert "Upload a file to enable" in _text_of(app)
