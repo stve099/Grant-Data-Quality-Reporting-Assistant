@@ -33,6 +33,19 @@ jobs:
       - name: mypy
         run: uv run mypy
 
+      - name: requirements.txt matches uv.lock
+        # The deployed Streamlit demo installs from requirements.txt, not uv.lock.
+        # If they drift, the demo silently runs different dependency versions than
+        # everything CI just tested.
+        run: |
+          uv export --no-dev --no-hashes --no-emit-project --no-annotate --no-header \
+            --format requirements-txt > /tmp/expected.txt
+          if ! diff <(grep -vE '^\s*(#|\.$|$)' requirements.txt) \
+                    <(grep -vE '^\s*(#|$)' /tmp/expected.txt); then
+            echo "::error::requirements.txt is out of date. Regenerate it (see its header)."
+            exit 1
+          fi
+
   tests:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

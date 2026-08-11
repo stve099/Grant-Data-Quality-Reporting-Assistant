@@ -46,10 +46,15 @@ job that forces a cp1252 console to guard a real encoding regression.
 
 ## 4. Deploy the free live demo (Streamlit Community Cloud)
 
-1. Go to <https://share.streamlit.io> → **New app** → pick the repo and `main`.
+1. Go to <https://share.streamlit.io> → **New app** → **Deploy a public app from GitHub** →
+   pick the repo and the `main` branch.
 2. Main file path: `src/grant_assistant/ui/app.py`.
-3. (Optional) Secrets → add `ANTHROPIC_API_KEY` to enable the AI analyst in the demo. To use
-   OpenAI instead, add `GRANT_ASSISTANT_PROVIDER=openai` and `OPENAI_API_KEY`.
+3. **Advanced settings → Python version → 3.12 or 3.13.** This is not optional: the pinned
+   `numpy` requires >= 3.12, and an older selection fails the build with
+   `Could not find a version that satisfies the requirement numpy`.
+4. (Optional) Advanced settings → Secrets → add `ANTHROPIC_API_KEY` to enable the AI analyst
+   in the demo. To use OpenAI instead, add `GRANT_ASSISTANT_PROVIDER=openai` and
+   `OPENAI_API_KEY`. Paste them in TOML form, one per line: `ANTHROPIC_API_KEY = "sk-ant-..."`.
 4. Share the link with data preloaded, so a first-time visitor lands on a populated dashboard
    instead of an upload prompt:
 
@@ -57,13 +62,18 @@ job that forces a cp1252 console to guard a real encoding regression.
    https://<your-app>.streamlit.app/?demo=housing_program_flawed.csv&profile=housing_stability
    ```
 
-5. Put that link at the top of the README and in the About panel.
+6. Put that link at the top of the README and in the About panel.
 
-Streamlit Cloud installs from `pyproject.toml`, base dependencies only — the `openai`, `pdf`,
-`pptx`, and `charts` extras are not installed. The app degrades rather than erroring: without a
-provider it runs in deterministic mode, and exports that need a missing backend warn and skip.
-The demo carries only synthetic sample data; remind viewers not to upload real client data to a
-public demo.
+Streamlit Cloud installs from `requirements.txt`, which exists for exactly this reason: it does
+not read a PEP 621 `pyproject.toml`, and the package lives under `src/`, so the app cannot
+import `grant_assistant` unless the project installs itself (the leading `.` in that file).
+Both were verified by installing into a clean Python 3.12 environment and importing the app
+module. A CI step keeps `requirements.txt` in step with `uv.lock`.
+
+It pins base dependencies only — the `openai`, `pdf`, `pptx`, and `charts` extras are absent.
+The app degrades rather than erroring: without a provider it runs in deterministic mode, and
+exports needing a missing backend warn and skip. The demo carries only synthetic sample data;
+remind viewers not to upload real client data to a public demo.
 
 ## 5. Cut a release
 
