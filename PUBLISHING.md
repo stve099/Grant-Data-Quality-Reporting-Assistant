@@ -82,6 +82,8 @@ job that forces a cp1252 console to guard a real encoding regression.
 
 6. Put that link at the top of the README and in the About panel.
 
+**Deployed:** <https://grant-data-quality-reporting-assistant-53vunxtum88xdn6guazrsc.streamlit.app/?demo=housing_program_flawed.csv&profile=housing_stability>
+
 Streamlit Cloud installs from `requirements.txt`, which exists for exactly this reason: it does
 not read a PEP 621 `pyproject.toml`, and the package lives under `src/`, so the app cannot
 import `grant_assistant` unless the project installs itself (the leading `.` in that file).

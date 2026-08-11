@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.11.1 — 2026-08-11
+
+### Added
+
+- **The project is published, with a live demo.** README carries a CI badge and a demo link
+  that preloads the flawed sample, so a first-time visitor lands on an audited dataset rather
+  than an upload prompt.
+- **`requirements.txt`,** which the hosted demo cannot deploy without: Streamlit Community
+  Cloud does not read a PEP 621 `pyproject.toml`, and this is a src-layout, so the app cannot
+  import `grant_assistant` unless the project installs itself. It includes the `openai` extra
+  because the Ollama backend is reached through the OpenAI-compatible client, and its absence
+  fails silently — `get_provider()` swallows the ImportError and drops to non-AI mode. A CI
+  step diffs the file against `uv.lock` so the demo cannot drift onto untested versions.
+
 ## 1.11.0 — 2026-08-10
 
 ### Added

@@ -1,11 +1,21 @@
 # Grant Data Quality & Reporting Assistant
 
+[![CI](https://github.com/stve099/Grant-Data-Quality-Reporting-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/stve099/Grant-Data-Quality-Reporting-Assistant/actions/workflows/ci.yml)
+[![Live demo](https://img.shields.io/badge/live%20demo-streamlit-ff4b4b)](https://grant-data-quality-reporting-assistant-53vunxtum88xdn6guazrsc.streamlit.app/?demo=housing_program_flawed.csv&profile=housing_stability)
+
 **Audit client-level program data, calculate grant performance measures, explore interactive
 dashboards, ask a grounded AI data analyst, and generate professional grant reports — all from
 one configurable Python application.**
 
+**▶ [Try the live demo](https://grant-data-quality-reporting-assistant-53vunxtum88xdn6guazrsc.streamlit.app/?demo=housing_program_flawed.csv&profile=housing_stability)** — opens with a
+flawed sample extract already audited, so you land on results rather than an upload prompt.
+
 Built for housing programs, nonprofit grant reporting, and human-services outcome workflows.
 All included data is **synthetic** — no real client information exists anywhere in this repository.
+
+> **About the hosted demo:** it installs base dependencies only, so PDF and PowerPoint export
+> warn and skip rather than rendering — a deliberate degradation, not a bug. HTML, Word, and both
+> Excel workbooks work fully. Run locally with `uv sync --all-extras` for every format.
 
 > Built a Python-based Grant Data Quality & Reporting Assistant that audits client-level
 > program data, detects inconsistencies, calculates grant performance measures, generates
