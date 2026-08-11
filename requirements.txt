@@ -1,19 +1,19 @@
 # Generated for Streamlit Community Cloud, which does not read a PEP 621
 # pyproject.toml. Regenerate after changing dependencies:
 #
-#   uv export --no-dev --no-hashes --no-emit-project --no-annotate --no-header \
-#     --format requirements-txt > requirements.txt
+#   uv export --no-dev --extra openai --no-hashes --no-emit-project --no-annotate #     --no-header --format requirements-txt > requirements.txt
 #
-# Base dependencies only, matching uv.lock. The optional pdf/pptx/charts/openai
-# extras are intentionally absent: the app degrades rather than crashing without
-# them, and the demo does not need them.
+# The leading '.' installs this project itself. It is required, not optional: the
+# package lives under src/, so `streamlit run src/grant_assistant/ui/app.py` cannot
+# import grant_assistant unless the project is installed.
 #
-# The leading '.' installs this project itself. It is required, not optional:
-# the package lives under src/, so `streamlit run src/grant_assistant/ui/app.py`
-# cannot import grant_assistant unless the project is installed.
+# The `openai` extra is included because the OpenAI-compatible client is also how
+# the Ollama backend is reached. Without it get_provider() swallows the ImportError
+# and falls back to non-AI mode with no visible error -- a silent failure, unlike
+# the pdf/pptx/charts extras, which degrade loudly (an export warns and skips) and
+# are therefore left out to keep the demo build small.
 
 .
-
 altair==6.2.2
 annotated-doc==0.0.5
 annotated-types==0.8.0
@@ -46,6 +46,7 @@ markupsafe==3.0.3
 mdurl==0.1.2
 narwhals==2.24.0
 numpy==2.5.1
+openai==2.52.0
 openpyxl==3.1.5
 packaging==26.2
 pandas==3.0.5
@@ -74,6 +75,7 @@ starlette==1.3.1
 streamlit==1.60.0
 tenacity==9.1.4
 toml==0.10.2
+tqdm==4.70.0
 typer==0.27.0
 typing-extensions==4.16.0
 typing-inspection==0.4.2

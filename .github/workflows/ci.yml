@@ -38,8 +38,8 @@ jobs:
         # If they drift, the demo silently runs different dependency versions than
         # everything CI just tested.
         run: |
-          uv export --no-dev --no-hashes --no-emit-project --no-annotate --no-header \
-            --format requirements-txt > /tmp/expected.txt
+          uv export --no-dev --extra openai --no-hashes --no-emit-project --no-annotate \
+            --no-header --format requirements-txt > /tmp/expected.txt
           if ! diff <(grep -vE '^\s*(#|\.$|$)' requirements.txt) \
                     <(grep -vE '^\s*(#|$)' /tmp/expected.txt); then
             echo "::error::requirements.txt is out of date. Regenerate it (see its header)."

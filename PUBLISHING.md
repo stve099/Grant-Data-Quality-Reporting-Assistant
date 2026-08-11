@@ -52,9 +52,27 @@ job that forces a cp1252 console to guard a real encoding regression.
 3. **Advanced settings → Python version → 3.12 or 3.13.** This is not optional: the pinned
    `numpy` requires >= 3.12, and an older selection fails the build with
    `Could not find a version that satisfies the requirement numpy`.
-4. (Optional) Advanced settings → Secrets → add `ANTHROPIC_API_KEY` to enable the AI analyst
-   in the demo. To use OpenAI instead, add `GRANT_ASSISTANT_PROVIDER=openai` and
-   `OPENAI_API_KEY`. Paste them in TOML form, one per line: `ANTHROPIC_API_KEY = "sk-ant-..."`.
+4. (Optional) **Advanced settings → Secrets** enables the AI analyst. Paste flat TOML with no
+   `[section]` header — Streamlit exposes only top-level keys as environment variables, and
+   this app reads `os.environ`. Pick one provider:
+
+   ```toml
+   # Ollama Cloud — note the key goes in OPENAI_API_KEY, which is the variable the
+   # OpenAI-compatible client reads regardless of which backend it points at.
+   GRANT_ASSISTANT_PROVIDER = "ollama"
+   OPENAI_BASE_URL = "https://ollama.com/v1"
+   OPENAI_API_KEY = "your-ollama-cloud-key"
+   GRANT_ASSISTANT_MODEL = "llama3.1"
+   ```
+
+   ```toml
+   # Anthropic
+   ANTHROPIC_API_KEY = "sk-ant-..."
+   ```
+
+   The Ollama default base URL is `http://localhost:11434/v1`, which does not exist on
+   Streamlit Cloud — a deployed Ollama config must point at Ollama Cloud. Leave secrets empty
+   and the app runs in deterministic mode: every number still works, only narration is off.
 4. Share the link with data preloaded, so a first-time visitor lands on a populated dashboard
    instead of an upload prompt:
 
