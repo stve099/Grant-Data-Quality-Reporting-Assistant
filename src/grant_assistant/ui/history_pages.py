@@ -41,10 +41,15 @@ def _trend_tone(trend: float | None) -> theme.Tone:
 def page_history() -> None:
     db_path = default_db_path()
     pipeline = st.session_state["pipeline"] if _loaded() else None
-    # Scope to the loaded profile when there is one: two funders' scores in one
-    # series would be a comparison of different rules, not a trend.
-    profile_id = pipeline["profile"].profile_id if pipeline else None
-    entries = load_history(db_path, profile_id)
+    # Scope to one profile always: two funders' scores in one series would be a
+    # comparison of different rules, not a trend. The loaded dataset names the
+    # profile when there is one; otherwise the reader has to choose, because a
+    # database holding several grants has no single answer.
+    if pipeline is not None:
+        profile_id: str | None = pipeline["profile"].profile_id
+    else:
+        profile_id = _profile_picker(db_path)
+    entries = load_history(db_path, profile_id) if profile_id else []
 
     pills = [theme.pill(f"{len(entries)} recorded run(s)", "info")]
     if pipeline:
@@ -111,6 +116,21 @@ def page_history() -> None:
     _storage_note(db_path)
 
 
+def _profile_picker(db_path) -> str | None:
+    """Which profile's history to show when no dataset names one."""
+    profiles = sorted({entry.profile_id for entry in load_history(db_path)})
+    if not profiles:
+        return None
+    if len(profiles) == 1:
+        return profiles[0]
+    return st.selectbox(
+        "Profile",
+        profiles,
+        help="Runs are scoped to one profile: scores from different funders are "
+        "calculated under different rules and do not belong on one trend.",
+    )
+
+
 def _record_panel(pipeline: dict | None, db_path, entries: list) -> None:
     """The write half: add the loaded dataset's audit to the history."""
     theme.panel_title("Record this run", "adds the loaded dataset to the trend")
@@ -147,6 +167,11 @@ def _record_panel(pipeline: dict | None, db_path, entries: list) -> None:
             if previous is not None:
                 message += f" {audit.overall_score - previous.score:+.1f} versus the last run."
             st.session_state["history_recorded"] = message
+            # Remember what this dataset was recorded as. Aging treats the loaded
+            # audit as the current run, so counting its own row from history as a
+            # prior observation would age every finding by one run per click.
+            recorded: set[int] = st.session_state.setdefault("recorded_run_ids", set())
+            recorded.add(run_id)
             st.rerun()
 
     if "history_recorded" in st.session_state:
@@ -154,25 +179,37 @@ def _record_panel(pipeline: dict | None, db_path, entries: list) -> None:
 
 
 def _aging_panel(entries: list, audit) -> None:
-    """How long each current finding has been open, against the recorded runs."""
-    theme.panel_title("Issue aging", "the loaded dataset against its history")
-    resolved = resolved_since_last_run(entries, audit)
+    """How long each current finding has been open, against *prior* runs.
+
+    The loaded audit is the current run, and :func:`rule_ages` counts it as one.
+    Recording it adds a row saying the same thing, so that row has to come back
+    out — otherwise one dataset recorded three times reads as a finding open for
+    three consecutive runs, which is the exact claim the aging panel exists to
+    make and the exact claim that would be false.
+    """
+    recorded = st.session_state.get("recorded_run_ids", set())
+    prior = [entry for entry in entries if entry.run_id not in recorded]
+
+    theme.panel_title("Issue aging", "the loaded dataset against earlier runs")
+    resolved = resolved_since_last_run(prior, audit)
     if resolved:
         st.success("Resolved since the last recorded run: " + ", ".join(resolved))
 
-    ages = rule_ages(entries, audit)
+    ages = rule_ages(prior, audit)
     persistent = [age for age in ages if age.is_persistent]
     if persistent:
         st.warning(
             "Open for three or more consecutive runs — a process, not a slip:\n\n- "
             + "\n- ".join(age.describe() for age in persistent)
         )
-    new_findings = [age for age in ages if age.is_new]
-    if new_findings:
-        with st.expander(f"{len(new_findings)} finding(s) new this run"):
-            for age in new_findings:
+    if ages:
+        # Every finding, not only the two extremes: one carried over from a single
+        # earlier run is neither new nor yet persistent, and listing only those two
+        # groups dropped it off the page entirely.
+        with st.expander(f"All {len(ages)} current finding(s), with age"):
+            for age in ages:
                 st.write(f"- {age.describe()}")
-    if not (resolved or persistent or new_findings):
+    elif not resolved:
         st.caption("Nothing to age yet — record a second run to compare against.")
 
 

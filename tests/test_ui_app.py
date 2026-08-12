@@ -575,9 +575,114 @@ def test_run_history_ages_findings_against_the_recorded_runs(loaded_app):
     """Aging is the reason rule counts are stored; the page must surface it."""
     _goto(loaded_app, "Run History")
     _click(loaded_app, "Record run")
-    _click(loaded_app, "Record run")
+    assert not loaded_app.exception
+
+    # The expander label carries the count; its body carries each finding's age.
+    labels = [e.label for e in loaded_app.expander]
+    assert any("with age" in label for label in labels), labels
+    assert "record(s)" in _text_of(loaded_app)
+
+
+# -- What a correction or a re-run must invalidate -----------------------------
+
+
+def test_applying_corrections_drops_workbooks_built_from_the_old_audit(loaded_app):
+    """A prepared download must not outlive the audit it was built from."""
+    _goto(loaded_app, "Export Center")
+    _click(loaded_app, "audit workbook")
+    _click(loaded_app, "analytics workbook")
+    assert loaded_app.session_state["export_audit"]
+
+    payload = _filled_worksheet(loaded_app)
+    uploader = next(
+        u for u in loaded_app.file_uploader if "correction worksheet" in u.label.casefold()
+    )
+    uploader.set_value(("corrections.xlsx", payload, _XLSX_MIME)).run()
+    _click(loaded_app, "Apply corrections")
+
+    assert "export_audit" not in loaded_app.session_state
+    assert "export_analytics" not in loaded_app.session_state
+
+
+def test_re_running_under_another_profile_drops_the_old_workbooks(loaded_app):
+    """Same hazard by the other route: the workbook would state the old profile's rules."""
+    _goto(loaded_app, "Export Center")
+    _click(loaded_app, "audit workbook")
+    assert loaded_app.session_state["export_audit"]
+
+    _goto(loaded_app, "Upload & Profile")
+    box = next(s for s in loaded_app.selectbox if s.label == "Grant profile")
+    box.set_value("rapid_rehousing").run()
+    next(b for b in loaded_app.button if "Re-run this dataset" in b.label).click().run()
+
+    assert "export_audit" not in loaded_app.session_state
+
+
+# -- Aging must not count the current run as its own history ------------------
+
+
+def test_recording_a_run_does_not_age_its_own_findings(loaded_app):
+    """rule_ages() counts the loaded audit as one run; its recorded row is the same run."""
+    _goto(loaded_app, "Run History")
     _click(loaded_app, "Record run")
     assert not loaded_app.exception
 
     text = _text_of(loaded_app)
-    assert "consecutive runs" in text, text[-800:]
+    assert "new this run" in text
+    assert "consecutive runs" not in text, "one recording cannot make a finding long-standing"
+
+
+def test_three_recordings_of_one_dataset_are_not_three_periods(loaded_app):
+    """The persistence threshold means three reporting periods, not three clicks."""
+    _goto(loaded_app, "Run History")
+    for _ in range(3):
+        _click(loaded_app, "Record run")
+    assert not loaded_app.exception
+    assert "consecutive runs" not in _text_of(loaded_app)
+
+
+def test_a_run_recorded_before_this_session_still_ages(loaded_app):
+    """Only this session's own recordings are excluded — real history must count."""
+    from grant_assistant.history import default_db_path, record_run
+
+    pipeline = loaded_app.session_state["pipeline"]
+    record_run(
+        pipeline["profile"],
+        pipeline["audit"],
+        pipeline["analytics"],
+        default_db_path(),
+        label="last quarter",
+    )
+    _goto(loaded_app, "Run History")
+    assert not loaded_app.exception
+    assert "consecutive runs" in _text_of(loaded_app)
+
+
+# -- History with no dataset loaded stays scoped to one profile ---------------
+
+
+def test_history_without_a_dataset_does_not_mix_profiles(monkeypatch):
+    """Scores from two funders are calculated under different rules."""
+    from grant_assistant.history import default_db_path, record_run
+    from grant_assistant.workflow import run_pipeline
+    from tests.conftest import CONFIG_DIR
+
+    db = default_db_path()
+    for profile_id in ("housing_stability", "rapid_rehousing"):
+        result = run_pipeline(FLAWED, profile_id, config_dir=CONFIG_DIR)
+        record_run(result.profile, result.audit, result.analytics, db, label=f"{profile_id} run")
+
+    app = _app().run()
+    _goto(app, "Run History")
+    assert not app.exception
+
+    picker = next((s for s in app.selectbox if s.label == "Profile"), None)
+    assert picker is not None, "expected a profile picker when no dataset names one"
+    assert set(picker.options) == {"housing_stability", "rapid_rehousing"}
+
+    table = next(
+        (df.value for df in app.dataframe if "Label" in getattr(df.value, "columns", [])),
+        None,
+    )
+    assert table is not None
+    assert list(table["Label"]) == [f"{picker.value} run"], "one profile's runs only"
