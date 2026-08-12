@@ -16,9 +16,11 @@ from grant_assistant.corrections import (
     SHEET_NAME,
     WORKSHEET_COLUMNS,
     Correction,
+    CorrectionImpact,
     apply_corrections,
     build_worksheet,
     read_worksheet,
+    read_worksheet_bytes,
     write_worksheet,
 )
 from grant_assistant.corrections.worksheet import (
@@ -102,6 +104,30 @@ def test_csv_worksheets_are_accepted(tmp_path):
         [{ROW: "3", CLIENT_ID: "C-1003", FIELD: "exit_destination", CORRECTED_VALUE: "Fixed"}]
     ).to_csv(path, index=False)
     assert read_worksheet(path)[0].row == 3
+
+
+def test_worksheet_bytes_read_the_same_as_a_file(audit_flawed, tmp_path):
+    """The web app never writes the upload to disk, so both paths must agree."""
+    path = write_worksheet(audit_flawed, tmp_path / "c.xlsx")
+    frame = pd.read_excel(path, sheet_name=SHEET_NAME, dtype=str)
+    frame.loc[0, CORRECTED_VALUE] = "Rental by client, no subsidy"
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        frame.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+
+    assert read_worksheet_bytes(path.read_bytes(), path.name) == read_worksheet(path)
+
+
+def test_worksheet_bytes_accept_a_csv(tmp_path):
+    payload = pd.DataFrame(
+        [{ROW: "3", CLIENT_ID: "C-1003", FIELD: "exit_destination", CORRECTED_VALUE: "Fixed"}]
+    ).to_csv(index=False)
+    assert read_worksheet_bytes(payload.encode("utf-8"), "corrections.csv")[0].row == 3
+
+
+def test_bytes_that_are_not_a_spreadsheet_are_a_clear_error():
+    """An upload of the wrong file must not surface as a parser's traceback."""
+    with pytest.raises(ValueError, match="could not be read as a correction worksheet"):
+        read_worksheet_bytes(b"not a spreadsheet at all", "notes.xlsx")
 
 
 # -- Applying ----------------------------------------------------------------
@@ -220,3 +246,32 @@ def test_applying_real_corrections_improves_the_audit(flawed_source, profile):
     )
     assert after_dest < before_dest
     assert after.overall_score >= audit.overall_score
+
+    # The same before/after both the CLI and the web app report.
+    impact = CorrectionImpact.between(audit, after)
+    assert impact.before_score == audit.overall_score
+    assert impact.after_score == after.overall_score
+    assert impact.score_delta == round(after.overall_score - audit.overall_score, 1)
+    assert impact.findings_delta == after.total_findings - audit.total_findings
+    assert impact.blocking_delta == len(after.blocking_issues) - len(audit.blocking_issues)
+
+
+def test_impact_names_the_rules_that_stopped_firing(audit_flawed):
+    """Cleanup that worked is invisible otherwise — a cleared finding just disappears."""
+    fired = [i for i in audit_flawed.issues if i.record_count]
+    assert fired, "the flawed sample must fire something"
+    survivor, *cleared = fired
+
+    after = audit_flawed.model_copy(update={"issues": [survivor]})
+    impact = CorrectionImpact.between(audit_flawed, after)
+
+    assert set(impact.cleared_rules) == {i.rule_name for i in cleared}
+    assert survivor.rule_name not in impact.cleared_rules
+
+
+def test_an_unchanged_audit_reports_no_movement(audit_flawed):
+    impact = CorrectionImpact.between(audit_flawed, audit_flawed)
+    assert impact.score_delta == 0
+    assert impact.findings_delta == 0
+    assert impact.cleared_rules == ()
+    assert not impact.improved

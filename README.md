@@ -34,7 +34,9 @@ All included data is **synthetic** — no real client information exists anywher
 | **Prompt Evaluation** | A graded eval harness (`grant-assistant eval`) that mechanically verifies the grounding contract: every number traced to a calculation, no client identifiers, refusal when data is unavailable, no system-prompt disclosure. Code-based graders plus an optional model-based rubric judge. |
 | **Report Generator** | HTML report with embedded interactive Plotly charts (CDN or fully offline), a **concise executive brief** template, **PDF export** via headless browser, Microsoft Word report, PowerPoint deck, Excel audit workbook (with a correction template), and Excel analytics workbook. **Branding and section selection come from the profile and apply to every narrative renderer at once**, so the deck cannot disagree with the report. |
 | **Grant Profiles** | YAML configuration drives everything: field mappings, program aliases, controlled vocabularies, follow-up schedules, performance targets, destination categories, severity overrides, and blocking rules. Three example profiles included. |
-| **Interfaces** | An 11-page Streamlit web app, a full-featured Typer CLI, an **MCP server**, and a Docker image. |
+| **Correction Round-Trip** | Export every flagged record to an Excel worksheet, fill in the corrections, and return it — in the web app or the CLI. Each edit is verified against the client ID recorded at export time, refusals are listed rather than guessed at, and the dataset is re-audited to show what actually cleared. |
+| **Run History** | Every run can be recorded with its score, findings, per-rule counts, and every calculated metric, so quality across reporting periods is shown rather than asserted — with issue aging that separates a data-entry slip from a process that is not working. Available from the app, the CLI, and a scheduled audit. |
+| **Interfaces** | A 12-page Streamlit web app, a full-featured Typer CLI, an **MCP server**, and a Docker image. |
 
 ## Screenshots
 
@@ -87,6 +89,13 @@ Then upload `sample_data/housing_program_flawed.csv` (or `.xlsx`), pick the
 Demo shortcut — open the app with data preloaded:
 `http://localhost:8501/?demo=housing_program_flawed.csv&profile=housing_stability`
 
+Two environment variables tune the app for the machine it runs on:
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `GRANT_ASSISTANT_HISTORY_DB` | `output/history.db` | Where **Run History** records runs. Point it somewhere durable when the app runs in a container. |
+| `GRANT_ASSISTANT_MAX_RETAINED_ROWS` | `25000` | Row ceiling for keeping the uploaded file in the session. Below it, a dataset can be re-run under another profile and corrected in place without re-uploading; above it that second copy is dropped and both features point at the CLI. |
+
 ### Run the CLI
 
 ```bash
@@ -111,6 +120,7 @@ uv run grant-assistant eval
 uv run grant-assistant eval --runs 3        # a hosted model is not reproducible
 
 # Fix the data: export what is wrong, take the corrections back, re-audit
+# (the same round trip is on the app's Export Center page)
 uv run grant-assistant correction-worksheet sample_data/housing_program_flawed.csv
 uv run grant-assistant apply-corrections sample_data/housing_program_flawed.csv output/corrections.xlsx
 
@@ -118,6 +128,7 @@ uv run grant-assistant apply-corrections sample_data/housing_program_flawed.csv 
 uv run grant-assistant batch ./extracts --pattern "2025-*.csv"
 
 # Quality over time: record each run, then chart the trend
+# (the app's Run History page does both; GRANT_ASSISTANT_HISTORY_DB picks the database)
 uv run grant-assistant record-run sample_data/housing_program_flawed.csv --label "Q1"
 uv run grant-assistant history --metric permanent_housing_rate --chart output/trend.html
 
@@ -294,7 +305,7 @@ src/grant_assistant/
 ├── reporting/         # HTML (Jinja2), Word (python-docx), Excel exports
 ├── datagen/           # synthetic clean + flawed sample data generator
 ├── cli/               # Typer CLI
-└── ui/                # Streamlit application (11 pages)
+└── ui/                # Streamlit application (12 pages)
 ```
 
 Data flows one way: **profile + file → prepared data → audit/analytics → agent + reports**.
@@ -392,6 +403,8 @@ errors and runs a CLI smoke pipeline on every push.
 | AI chat says "Non-AI mode" | Set `ANTHROPIC_API_KEY` in `.env` (see `.env.example`) |
 | Streamlit port already in use | `streamlit run ... --server.port 8502` |
 | Charts blank in the HTML report offline | The HTML report loads plotly.js from a CDN; open it online or keep the Streamlit app for offline charts |
+| PDF export says the browser is missing | `uv run playwright install chromium` — the browser is a separate download from the `pdf` extra, and one left behind by an older playwright does not count |
+| Re-run / apply-corrections missing in the app | The extract is above `GRANT_ASSISTANT_MAX_RETAINED_ROWS`; raise it, or use `grant-assistant apply-corrections`, which reads from disk |
 
 ---
 

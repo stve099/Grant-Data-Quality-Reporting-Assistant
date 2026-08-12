@@ -12,6 +12,7 @@ run — so a profile that adds a measure next quarter does not require a migrati
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -19,11 +20,25 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
+
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
 from grant_assistant.models import AuditResult
 
 DEFAULT_DB_NAME = "history.db"
+
+#: Where the web app records runs when nothing else says otherwise. The CLI
+#: takes a --db path per invocation; a browser session has nowhere to type one,
+#: so it needs a default that an operator can still redirect.
+DB_PATH_ENV_VAR = "GRANT_ASSISTANT_HISTORY_DB"
+
+
+def default_db_path() -> Path:
+    """The history database to use when the caller names none."""
+    configured = os.environ.get(DB_PATH_ENV_VAR, "").strip()
+    return Path(configured) if configured else Path("output") / DEFAULT_DB_NAME
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -234,6 +249,41 @@ def metric_series(entries: list[HistoryEntry], metric: str) -> list[tuple[dateti
         if value is not None:
             series.append((entry.recorded_at, float(value)))
     return series
+
+
+def history_frame(entries: list[HistoryEntry]) -> pd.DataFrame:
+    """Recorded runs as a table, oldest first, for display or export.
+
+    Kept out of the presentation layer so the web app's table and any future
+    export show the same columns with the same labels.
+    """
+    return pd.DataFrame(
+        [
+            {
+                "Run": entry.run_id,
+                "Recorded": entry.recorded_at.strftime("%Y-%m-%d %H:%M"),
+                "Label": entry.label or "—",
+                "Rows": entry.total_rows,
+                "Score": round(entry.score, 1),
+                "Grade": entry.grade,
+                "Findings": entry.findings,
+                "Blocking": entry.blocking,
+                "Source": entry.source or "—",
+            }
+            for entry in entries
+        ],
+        columns=[
+            "Run",
+            "Recorded",
+            "Label",
+            "Rows",
+            "Score",
+            "Grade",
+            "Findings",
+            "Blocking",
+            "Source",
+        ],
+    )
 
 
 def score_trend(entries: list[HistoryEntry]) -> float | None:

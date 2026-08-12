@@ -14,6 +14,7 @@ not match is skipped and reported, never guessed at.
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -161,23 +162,46 @@ def write_worksheet(audit: AuditResult, path: str | Path) -> Path:
 
 
 def read_worksheet(path: str | Path) -> list[Correction]:
-    """Read filled-in corrections, ignoring rows left blank.
+    """Read filled-in corrections from a file, ignoring rows left blank.
 
     Raises:
         ValueError: the file is missing columns this module wrote, which almost
             always means the wrong file was passed.
     """
     path = Path(path)
+    return _read_source(path, path.name, path.suffix)
+
+
+def read_worksheet_bytes(payload: bytes, filename: str) -> list[Correction]:
+    """Read filled-in corrections from an upload that never reaches disk.
+
+    The web app receives the returned worksheet as bytes. Writing it to a
+    temporary file first would only be a detour: the parsing, the column check,
+    and the wrong-file error all have to behave identically either way, so both
+    entry points share one implementation.
+    """
+    return _read_source(io.BytesIO(payload), filename, Path(filename).suffix)
+
+
+def _read_source(source: Any, name: str, suffix: str) -> list[Correction]:
     # keep_default_na=False so an untouched cell reads as "" rather than NaN,
     # whose str() is the non-empty string "nan" and would look like a correction.
-    if path.suffix.lower() in {".csv", ".txt"}:
-        frame = pd.read_csv(path, dtype=str, keep_default_na=False)
-    else:
-        frame = pd.read_excel(path, sheet_name=SHEET_NAME, dtype=str, keep_default_na=False)
+    try:
+        if suffix.lower() in {".csv", ".txt"}:
+            frame = pd.read_csv(source, dtype=str, keep_default_na=False)
+        else:
+            frame = pd.read_excel(source, sheet_name=SHEET_NAME, dtype=str, keep_default_na=False)
+    except FileNotFoundError:
+        raise
+    except Exception as exc:
+        # Whatever the parser objects to — a missing sheet, a file that is not a
+        # spreadsheet at all — the user's problem is the same one, and callers
+        # already handle ValueError as "that is not the right file".
+        raise ValueError(f"{name} could not be read as a correction worksheet: {exc}") from exc
     missing = [c for c in (ROW, CLIENT_ID, FIELD, CORRECTED_VALUE) if c not in frame.columns]
     if missing:
         raise ValueError(
-            f"{path.name} is not a correction worksheet — missing column(s): {', '.join(missing)}."
+            f"{name} is not a correction worksheet — missing column(s): {', '.join(missing)}."
         )
 
     corrections: list[Correction] = []

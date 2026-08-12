@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.13.0 — 2026-08-12
+
+### Added
+
+- **The correction round-trip closes inside the app.** The Export Center exported a worksheet
+  and then told the user to finish the job with `grant-assistant apply-corrections` in a
+  terminal, which the people this tool is for do not have open. A filled-in worksheet can now
+  be returned on the same page: it is applied to the retained source frame, the dataset is
+  re-audited, and the before/after score, findings, blocking count, and the rules that stopped
+  firing are shown. The corrected extract downloads as CSV. Every refusal — a client ID that
+  does not match, a row outside the data — is still listed rather than silently dropped.
+- **A Run History page**, and with it the web app's first writer into the history store. Every
+  writer was previously a command line (`record-run`, `batch --record`, `scheduled-audit`), so
+  a program manager working in the browser built no history and never saw the trend or the
+  issue aging built on it. The page records the loaded dataset under a label, charts the score
+  across runs with an optional metric alongside it, lists every recorded run, and ages the
+  current findings against the ones before them. `GRANT_ASSISTANT_HISTORY_DB` chooses the
+  database; it defaults to `output/history.db`.
+
+### Changed
+
+- **The retained source frame now has a ceiling.** Keeping the pre-mapping frame is what makes
+  re-running under another profile and applying corrections possible, but it is a third copy of
+  the dataset per browser session. Above `GRANT_ASSISTANT_MAX_RETAINED_ROWS` rows (25,000 by
+  default) the copy is dropped, and the two features that need it say so and point at the CLI
+  rather than silently doubling a shared server's footprint.
+- **`CorrectionImpact`** computes the before/after of a correction round once, for both the CLI
+  and the web app. It also names the rules that cleared entirely, which the CLI now reports too.
+
+### Fixed
+
+- **PDF export degraded to a traceback when playwright was installed without its browser.**
+  `pdf_backend()` probed only for the import, so `report --format all` crashed instead of
+  skipping the PDF, and the PDF tests failed instead of skipping. It now checks that the
+  chromium build the installed playwright expects is actually on disk — a browser left behind
+  by a different playwright version does not count — and a launch that fails anyway is reported
+  as a missing backend rather than raised raw. The install hint names the specific problem.
+
 ## 1.12.0 — 2026-08-11
 
 ### Added

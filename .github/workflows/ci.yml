@@ -97,9 +97,10 @@ jobs:
         run: uv sync --all-extras
 
       - name: Install the headless browser the PDF backend drives
-        # pdf_backend() probes only for the playwright import, so installing the
-        # extra makes the PDF tests run. Without the browser binary they would
-        # then fail rather than skip.
+        # pdf_backend() requires the browser build that the locked playwright
+        # expects, so this download is what makes the PDF tests run rather than
+        # skip. Installing it through the project's own playwright is what keeps
+        # the two in step -- a browser from another version does not count.
         run: uv run playwright install --with-deps chromium
 
       - name: Confirm every optional backend is actually present

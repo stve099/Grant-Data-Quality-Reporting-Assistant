@@ -53,12 +53,24 @@ def test_pdf_backend_reports_a_known_value():
     assert pdf_backend() in {None, "playwright", "edge"}
 
 
-def test_playwright_is_preferred_when_present(monkeypatch):
+def test_playwright_is_preferred_when_usable(monkeypatch):
+    """Preference is over a *usable* playwright: the import alone is not one."""
     from grant_assistant.reporting import pdf_report
 
     monkeypatch.setattr(pdf_report, "_playwright_available", lambda: True)
+    monkeypatch.setattr(pdf_report, "_playwright_browser_installed", lambda: True)
     monkeypatch.setattr(pdf_report, "_find_edge", lambda: r"C:\edge.exe")
     assert pdf_report.pdf_backend() == "playwright"
+
+
+def test_edge_wins_over_a_playwright_with_no_browser(monkeypatch):
+    """A backend that cannot render is not a backend to prefer."""
+    from grant_assistant.reporting import pdf_report
+
+    monkeypatch.setattr(pdf_report, "_playwright_available", lambda: True)
+    monkeypatch.setattr(pdf_report, "_playwright_browser_installed", lambda: False)
+    monkeypatch.setattr(pdf_report, "_find_edge", lambda: r"C:\edge.exe")
+    assert pdf_report.pdf_backend() == "edge"
 
 
 def test_edge_is_the_fallback(monkeypatch):
