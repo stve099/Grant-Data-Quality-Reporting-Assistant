@@ -20,8 +20,10 @@ from grant_assistant.corrections import (
     ApplyReport,
     CorrectionImpact,
     apply_corrections,
+    corrected_download,
     read_worksheet_bytes,
 )
+from grant_assistant.history import HistorySummary, default_db_path, load_history_summary
 from grant_assistant.models import AuditResult
 from grant_assistant.ui import theme
 from grant_assistant.workflow import run_pipeline_on_frame
@@ -149,7 +151,7 @@ def apply_correction_upload(payload: bytes, filename: str) -> CorrectionOutcome:
     after = store_pipeline(corrected, pipeline["profile"], f"{stem} (corrected).csv")
     outcome = CorrectionOutcome(report, CorrectionImpact.between(before, after), filename)
     st.session_state["correction_outcome"] = outcome
-    st.session_state["corrected_dataset"] = corrected.to_csv(index=False).encode("utf-8")
+    st.session_state["corrected_dataset"] = corrected_download(corrected, pipeline["filename"])
     return outcome
 
 
@@ -162,6 +164,24 @@ def profile_label(profiles: dict[str, Path], profile_id: str) -> str:
         return profile_id
 
 
+def session_history() -> HistorySummary | None:
+    """Recorded runs behind the loaded dataset, for the report and the analyst.
+
+    Runs this session recorded for the loaded dataset are excluded: they say what
+    the current audit already says, so counting them would age every finding by
+    one and let the analyst describe a trend against itself.
+    """
+    if not loaded():
+        return None
+    pipeline = st.session_state["pipeline"]
+    return load_history_summary(
+        default_db_path(),
+        pipeline["profile"].profile_id,
+        pipeline["audit"],
+        exclude_run_ids=set(st.session_state.get("recorded_run_ids", set())),
+    )
+
+
 def agent() -> DataAnalystAgent:
     if "agent" not in st.session_state:
         pipeline = st.session_state["pipeline"]
@@ -170,6 +190,7 @@ def agent() -> DataAnalystAgent:
             pipeline["audit"],
             pipeline["profile"],
             provider=get_provider(),
+            history=session_history(),
         )
     return st.session_state["agent"]
 

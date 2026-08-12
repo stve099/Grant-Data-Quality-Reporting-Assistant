@@ -102,7 +102,10 @@ The logic belongs in a module and is tested there; the CLI test exists to catch 
 which is where these actually break (a stripped import, a missing symbol).
 
 **Something backed by history** — write through `history/store.record_run` and read with
-`load_history`. Both metrics and rule counts are stored long, one row per key per run, so
+`load_history`, or `load_history_summary` when you want the reduced, serializable view the
+report renderers and the analyst's fact sheet share. Anything comparing the current audit
+against recorded runs must exclude runs recorded *from that same audit*, or aging counts the
+current run twice. Both metrics and rule counts are stored long, one row per key per run, so
 a profile that gains a measure needs no migration. If you add a column to `runs`, extend
 `_migrate()`: databases created by earlier versions are expected to keep working, and
 there is a test that builds an old schema by hand to prove it.

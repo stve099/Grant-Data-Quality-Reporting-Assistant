@@ -168,6 +168,39 @@ def write_docx_report(report: ReportData, path: str | Path) -> Path:
                 ],
             )
 
+    # --- Data quality over time ---------------------------------------------
+    if report.has_history and include("history"):
+        history = report.history
+        assert history is not None  # has_history
+        doc.add_heading("Data Quality Over Time", level=1)
+        doc.add_paragraph(history.headline())
+        _add_table(
+            doc,
+            ["Run", "Recorded", "Score", "Findings", "Blocking"],
+            [
+                [
+                    point.label,
+                    point.recorded_at[:10],
+                    f"{point.score:.1f}",
+                    str(point.findings),
+                    str(point.blocking),
+                ]
+                for point in history.points
+            ],
+        )
+        if history.persistent_findings:
+            doc.add_paragraph(
+                "Open for three or more consecutive runs, which points at a process rather "
+                "than a one-off entry error:"
+            )
+            _bullets(doc, [f.describe() for f in history.persistent_findings])
+        if history.resolved_rule_ids:
+            doc.add_paragraph(
+                "Resolved since the previous recorded run: "
+                + ", ".join(history.resolved_rule_ids)
+                + "."
+            )
+
     # --- Population served --------------------------------------------------
     if include("population"):
         doc.add_heading("Population Served", level=1)

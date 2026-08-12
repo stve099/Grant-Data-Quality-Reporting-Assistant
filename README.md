@@ -32,10 +32,10 @@ All included data is **synthetic** — no real client information exists anywher
 | **Analytics** | Deterministic enrollment/exit/outcome/income/follow-up/demographic metrics, program comparisons, monthly trends, period-over-period deltas, and goal-vs-actual performance measures (grant-wide or program-scoped) — every number computed in transparent, tested pandas code. |
 | **AI Data Analyst Agent** | A Senior-Analyst-style agent with **typed tool use**: Claude retrieves exact values through read-only tools over the calculated results, proactively surfaces anomalies, trends, risks, and recommended actions, and writes executive summaries. Uses prompt caching, streaming, and extended thinking. Works fully offline in non-AI mode. |
 | **Prompt Evaluation** | A graded eval harness (`grant-assistant eval`) that mechanically verifies the grounding contract: every number traced to a calculation, no client identifiers, refusal when data is unavailable, no system-prompt disclosure. Code-based graders plus an optional model-based rubric judge. |
-| **Report Generator** | HTML report with embedded interactive Plotly charts (CDN or fully offline), a **concise executive brief** template, **PDF export** via headless browser, Microsoft Word report, PowerPoint deck, Excel audit workbook (with a correction template), and Excel analytics workbook. **Branding and section selection come from the profile and apply to every narrative renderer at once**, so the deck cannot disagree with the report. |
+| **Report Generator** | HTML report with embedded interactive Plotly charts (CDN or fully offline), a **data quality over time** section built from recorded runs, a **concise executive brief** template, **PDF export** via headless browser, Microsoft Word report, PowerPoint deck, Excel audit workbook (with a correction template), and Excel analytics workbook. **Branding and section selection come from the profile and apply to every narrative renderer at once**, so the deck cannot disagree with the report. |
 | **Grant Profiles** | YAML configuration drives everything: field mappings, program aliases, controlled vocabularies, follow-up schedules, performance targets, destination categories, severity overrides, and blocking rules. Three example profiles included. |
 | **Correction Round-Trip** | Export every flagged record to an Excel worksheet, fill in the corrections, and return it — in the web app or the CLI. Each edit is verified against the client ID recorded at export time, refusals are listed rather than guessed at, and the dataset is re-audited to show what actually cleared. |
-| **Run History** | Every run can be recorded with its score, findings, per-rule counts, and every calculated metric, so quality across reporting periods is shown rather than asserted — with issue aging that separates a data-entry slip from a process that is not working. Available from the app, the CLI, and a scheduled audit. |
+| **Run History** | Every run can be recorded with its score, findings, per-rule counts, and every calculated metric, so quality across reporting periods is shown rather than asserted — with issue aging that separates a data-entry slip from a process that is not working. Available from the app, the CLI, and a scheduled audit, and carried into the report and the AI analyst's grounding so the trend reaches the funder, not just the operator. |
 | **Interfaces** | A 12-page Streamlit web app, a full-featured Typer CLI, an **MCP server**, and a Docker image. |
 
 ## Screenshots
@@ -131,6 +131,8 @@ uv run grant-assistant batch ./extracts --pattern "2025-*.csv"
 # (the app's Run History page does both; GRANT_ASSISTANT_HISTORY_DB picks the database)
 uv run grant-assistant record-run sample_data/housing_program_flawed.csv --label "Q1"
 uv run grant-assistant history --metric permanent_housing_rate --chart output/trend.html
+# ...then a report that carries the trend, the aging, and what cleared
+uv run grant-assistant report sample_data/housing_program_flawed.csv --history-db output/history.db
 
 # Flatten one-to-one related extracts before auditing
 uv run grant-assistant merge-datasets enrollments.csv income.csv assessments.csv \

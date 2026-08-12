@@ -9,6 +9,7 @@ from grant_assistant import schema
 from grant_assistant.agents import DataAnalystAgent, InsightReport
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
+from grant_assistant.history import HistorySummary
 from grant_assistant.models import AuditResult
 
 MEASURE_DEFINITIONS: dict[str, str] = {
@@ -45,6 +46,15 @@ class ReportData:
     executive_summary: str
     generated_at: datetime = field(default_factory=datetime.now)
     ai_generated_narrative: bool = False
+    #: Recorded runs behind this one. None when no history database was supplied,
+    #: which is the ordinary case for a first report — the section simply does not
+    #: render, rather than claiming a trend nobody recorded.
+    history: HistorySummary | None = None
+
+    @property
+    def has_history(self) -> bool:
+        """Whether there is recorded history worth printing a section about."""
+        return self.history is not None and self.history.runs > 0
 
     @property
     def title(self) -> str:
@@ -129,9 +139,15 @@ def build_report_data(
     audit: AuditResult | None,
     profile: GrantProfile,
     agent: DataAnalystAgent | None = None,
+    history: HistorySummary | None = None,
 ) -> ReportData:
-    """Build the report context; uses the agent for narrative when provided."""
-    agent = agent or DataAnalystAgent(analytics, audit, profile, provider=None)
+    """Build the report context; uses the agent for narrative when provided.
+
+    ``history`` is optional because most reports are generated without a history
+    database at hand. When one is supplied the agent is given the same summary,
+    so the narrative and the trend section cannot state different movements.
+    """
+    agent = agent or DataAnalystAgent(analytics, audit, profile, provider=None, history=history)
     insights = agent.proactive_insights()
     summary = agent.executive_summary()
     return ReportData(
@@ -141,4 +157,5 @@ def build_report_data(
         insights=insights,
         executive_summary=summary,
         ai_generated_narrative=agent.ai_enabled,
+        history=history,
     )

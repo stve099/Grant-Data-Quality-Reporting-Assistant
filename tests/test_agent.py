@@ -314,3 +314,64 @@ def test_an_unrecognized_question_uses_the_tools():
     from grant_assistant.agents.workflows import should_stream
 
     assert should_stream("zzz qqq") is False
+
+
+# -- The recorded trend in the fact sheet -------------------------------------
+
+
+def _history(profile, audit_before, audit_after, analytics, db):
+    from grant_assistant.history import build_history_summary, load_history, record_run
+
+    record_run(profile, audit_before, analytics, db, label="Q1")
+    return build_history_summary(load_history(db), audit_after, profile.profile_id)
+
+
+def test_fact_sheet_says_plainly_when_no_history_exists(analytics_flawed, audit_flawed, profile):
+    """Silence would invite the model to describe a trend from a single snapshot."""
+    from grant_assistant.agents.context import build_fact_sheet
+
+    sheet = build_fact_sheet(analytics_flawed, audit_flawed, profile)
+    assert "no previous runs" in str(sheet["quality_history"]).casefold()
+
+
+def test_fact_sheet_hands_the_model_every_difference(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    from grant_assistant.agents.context import build_fact_sheet
+
+    summary = _history(profile, audit_flawed, audit_clean, analytics_flawed, tmp_path / "h.db")
+    facts = build_fact_sheet(analytics_flawed, audit_clean, profile, summary)["quality_history"]
+
+    assert facts["recorded_runs"] == 1
+    assert facts["score_change_since_previous_run"] == round(
+        audit_clean.overall_score - audit_flawed.overall_score, 1
+    )
+    assert facts["latest_recorded_score"] == round(audit_flawed.overall_score, 1)
+
+
+def test_history_facts_carry_no_client_level_data(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    """The privacy contract holds for the new block as much as the old ones."""
+    import json
+
+    from grant_assistant.agents.context import build_fact_sheet
+
+    summary = _history(profile, audit_flawed, audit_clean, analytics_flawed, tmp_path / "h.db")
+    facts = build_fact_sheet(analytics_flawed, audit_clean, profile, summary)["quality_history"]
+    blob = json.dumps(facts)
+
+    assert "client_id" not in blob.casefold()
+    assert "C-10" not in blob, "no client identifier may appear in a run summary"
+
+
+def test_the_agent_passes_history_through_to_its_grounding(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    from grant_assistant.agents import DataAnalystAgent
+
+    summary = _history(profile, audit_flawed, audit_clean, analytics_flawed, tmp_path / "h.db")
+    agent = DataAnalystAgent(analytics_flawed, audit_clean, profile, history=summary)
+
+    assert agent.fact_sheet["quality_history"]["recorded_runs"] == 1
+    assert agent.tools.history is summary

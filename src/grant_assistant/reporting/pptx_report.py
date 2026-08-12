@@ -271,6 +271,41 @@ def write_pptx_report(report: ReportData, path: str | Path) -> Path:
             run.font.size = Pt(14)
             run.font.color.rgb = RGBColor(*INK)
 
+    if report.has_history and include("history"):
+        history = report.history
+        assert history is not None  # has_history
+        slide = add_slide()
+        heading(slide, "Data quality over time")
+        movement = f"{history.since_previous:+.1f}" if history.since_previous is not None else "n/a"
+        textbox(slide, movement, 0.8, 1.5, 3.0, 1.2, size=54, bold=True, color=brand)
+        textbox(
+            slide,
+            f"points since the previous run · {history.runs} recorded",
+            0.8,
+            2.8,
+            3.6,
+            0.6,
+            size=14,
+            color=MUTED,
+        )
+        # The deck carries the same aging claim as the report, and the last few
+        # runs rather than all of them: a slide holds a shape, not a ledger.
+        lines = [f"{p.label}: {p.score:.1f}" for p in history.points[-5:]]
+        lines += [f.describe() for f in history.persistent_findings[:3]]
+        if history.resolved_rule_ids:
+            lines.append("Resolved since last run: " + ", ".join(history.resolved_rule_ids[:6]))
+        textbox(
+            slide,
+            "Recorded runs and long-standing findings",
+            4.8,
+            1.5,
+            7.7,
+            0.5,
+            size=15,
+            bold=True,
+        )
+        bullets(slide, lines[:8], 2.1, size=14)
+
     # --- Findings and actions ----------------------------------------------
     if include("findings"):
         slide = add_slide()

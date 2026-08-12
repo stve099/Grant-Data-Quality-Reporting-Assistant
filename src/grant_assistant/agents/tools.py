@@ -11,8 +11,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from grant_assistant.agents.context import history_facts
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
+from grant_assistant.history import HistorySummary
 from grant_assistant.models import AuditResult
 from grant_assistant.security import sanitize_mapping, sanitize_text
 
@@ -29,10 +31,12 @@ class AnalystTools:
         analytics: AnalyticsResult,
         audit: AuditResult | None,
         profile: GrantProfile,
+        history: HistorySummary | None = None,
     ) -> None:
         self.analytics = analytics
         self.audit = audit
         self.profile = profile
+        self.history = history
 
     # -- Tool schemas (Anthropic tool format) --------------------------------
 
@@ -78,6 +82,17 @@ class AnalystTools:
                 "input_schema": {"type": "object", "properties": {}},
             },
             {
+                "name": "get_quality_history",
+                "description": (
+                    "Data quality across previously recorded runs: the score at each one, "
+                    "how far it moved since the previous run, findings open for three or "
+                    "more consecutive runs, and rules resolved since the last run. Every "
+                    "change is already calculated — use these values rather than "
+                    "subtracting scores yourself. Returns a note when no runs are recorded."
+                ),
+                "input_schema": {"type": "object", "properties": {}},
+            },
+            {
                 "name": "get_trends",
                 "description": "Monthly enrollment and exit counts across the dataset.",
                 "input_schema": {"type": "object", "properties": {}},
@@ -110,6 +125,7 @@ class AnalystTools:
             "compare_programs": self._compare_programs,
             "get_measures": self._get_measures,
             "get_issue_summary": self._get_issue_summary,
+            "get_quality_history": self._get_quality_history,
             "get_trends": self._get_trends,
             "get_demographics": self._get_demographics,
         }
@@ -185,6 +201,14 @@ class AnalystTools:
                 for i in self.audit.issues_sorted()
             ],
         }
+
+    def _get_quality_history(self, _: dict[str, Any]) -> dict[str, Any]:
+        if self.history is None or not self.history.runs:
+            return {
+                "recorded_runs": 0,
+                "note": "No previous runs are recorded, so no trend can be stated.",
+            }
+        return history_facts(self.history)
 
     def _get_trends(self, _: dict[str, Any]) -> dict[str, Any]:
         return {

@@ -457,7 +457,9 @@ def test_applying_a_worksheet_re_audits_the_loaded_dataset(loaded_app):
     # The whole session moves to the corrected data, not just this page.
     assert loaded_app.session_state["pipeline"]["audit"].overall_score == outcome.impact.after_score
     assert "(corrected)" in loaded_app.session_state["pipeline"]["filename"]
-    assert loaded_app.session_state["corrected_dataset"].startswith(b"Client ID")
+    payload, name, _mime = loaded_app.session_state["corrected_dataset"]
+    assert payload.startswith(b"Client ID"), "the CSV upload comes back as CSV"
+    assert name.endswith("_corrected.csv")
 
 
 def test_a_worksheet_that_is_not_one_is_refused_on_screen(loaded_app):
@@ -686,3 +688,58 @@ def test_history_without_a_dataset_does_not_mix_profiles(monkeypatch):
     )
     assert table is not None
     assert list(table["Label"]) == [f"{picker.value} run"], "one profile's runs only"
+
+
+# -- The trend reaches the report the app builds ------------------------------
+
+
+def test_a_report_built_in_the_app_carries_the_recorded_trend(loaded_app):
+    """Recording a run then building a report must show the movement, not a snapshot."""
+    from grant_assistant.history import default_db_path, record_run
+
+    pipeline = loaded_app.session_state["pipeline"]
+    record_run(
+        pipeline["profile"],
+        pipeline["audit"],
+        pipeline["analytics"],
+        default_db_path(),
+        label="Q1 FY26",
+    )
+
+    _goto(loaded_app, "Report Builder")
+    _click(loaded_app, "Build report")
+    assert not loaded_app.exception
+
+    html = loaded_app.session_state["report_html"]
+    assert "Data Quality Over Time" in html
+    assert "Q1 FY26" in html
+
+
+def test_the_analyst_is_grounded_in_the_same_history(loaded_app):
+    from grant_assistant.history import default_db_path, record_run
+
+    pipeline = loaded_app.session_state["pipeline"]
+    record_run(
+        pipeline["profile"],
+        pipeline["audit"],
+        pipeline["analytics"],
+        default_db_path(),
+        label="Q1 FY26",
+    )
+    _goto(loaded_app, "Analyst Chat")
+    assert not loaded_app.exception
+
+    facts = loaded_app.session_state["agent"].fact_sheet["quality_history"]
+    assert facts["recorded_runs"] == 1
+    assert facts["trend"][0]["label"] == "Q1 FY26"
+
+
+def test_a_run_recorded_in_this_session_is_not_a_trend_against_itself(loaded_app):
+    """Record then report: the app must not compare the dataset with its own row."""
+    _goto(loaded_app, "Run History")
+    _click(loaded_app, "Record run")
+
+    _goto(loaded_app, "Report Builder")
+    _click(loaded_app, "Build report")
+    assert not loaded_app.exception
+    assert "Data Quality Over Time" not in loaded_app.session_state["report_html"]

@@ -29,22 +29,49 @@ CHART_WIDTH_INCHES = 6.0
 
 INSTALL_HINT = "Install the chart backend with: uv sync --extra charts"
 
+#: kaleido 1.x renders through a browser it downloads separately, so an import
+#: that succeeds still cannot produce an image until that download has happened.
+BROWSER_HINT = (
+    "kaleido is installed but has no browser to render with. Run: uv run plotly_get_chrome"
+)
+
 
 class ChartBackendError(Exception):
     """Raised only when static chart rendering was explicitly required."""
 
 
 @lru_cache(maxsize=1)
-def chart_backend_available() -> bool:
-    """True when static image export works.
-
-    Cached because the import check is the expensive part and the answer cannot
-    change within a process.
-    """
+def _kaleido_installed() -> bool:
     try:
         import kaleido  # noqa: F401
     except ImportError:
         logger.debug("kaleido is not installed — Word reports will omit charts.")
+        return False
+    return True
+
+
+@lru_cache(maxsize=1)
+def chart_backend_available() -> bool:
+    """True when static image export actually works.
+
+    Proved by rendering, not by importing: kaleido 1.x drives a browser it
+    downloads on a separate command, so the import succeeding says nothing about
+    whether an image can be produced. Answering yes on the strength of the import
+    left `require_chart_backend` raising the wrong advice and made the chart
+    tests fail where they meant to skip.
+
+    Cached because the probe costs a render and the answer cannot change within
+    a process.
+    """
+    if not _kaleido_installed():
+        return False
+    try:
+        import plotly.graph_objects as go
+
+        figure: Any = go.Figure()
+        figure.to_image(format="png", width=8, height=8, scale=1)
+    except Exception as exc:
+        logger.debug("kaleido cannot render: %s", exc)
         return False
     return True
 
@@ -67,7 +94,12 @@ def figure_png(
         return None
 
 
+def missing_backend_hint() -> str:
+    """The advice that fits the actual problem: no kaleido, or no browser for it."""
+    return BROWSER_HINT if _kaleido_installed() else INSTALL_HINT
+
+
 def require_chart_backend() -> None:
     """Raise with the fix when images are required but unavailable."""
     if not chart_backend_available():
-        raise ChartBackendError(f"No static chart backend available. {INSTALL_HINT}")
+        raise ChartBackendError(f"No static chart backend available. {missing_backend_hint()}")

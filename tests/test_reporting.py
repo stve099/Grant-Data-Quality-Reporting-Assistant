@@ -144,3 +144,87 @@ def test_clean_dataset_report_renders_without_audit_section(analytics_clean, pro
     html = render_html_report(data)
     assert "Data Quality Statement" not in html
     assert "Executive Summary" in html
+
+
+# -- The recorded trend in the funder-facing report ---------------------------
+#
+# The store has always held this history; until now it reached the CLI and the
+# app and never the document that goes to the funder.
+
+
+@pytest.fixture()
+def report_with_history(tmp_path, analytics_flawed, audit_flawed, audit_clean, profile):
+    from grant_assistant.history import build_history_summary, load_history, record_run
+    from grant_assistant.reporting import build_report_data
+
+    db = tmp_path / "history.db"
+    record_run(profile, audit_flawed, analytics_flawed, db, label="Q1 FY26")
+    summary = build_history_summary(load_history(db), audit_clean, profile.profile_id)
+    return build_report_data(analytics_flawed, audit_clean, profile, history=summary)
+
+
+def test_a_report_without_history_omits_the_section(analytics_flawed, audit_flawed, profile):
+    """No recorded runs means no trend claim — not an empty heading."""
+    from grant_assistant.reporting import build_report_data, render_html_report
+
+    data = build_report_data(analytics_flawed, audit_flawed, profile)
+    assert not data.has_history
+    assert "Data Quality Over Time" not in render_html_report(data)
+
+
+def test_the_html_report_states_the_movement(report_with_history):
+    from grant_assistant.reporting import render_html_report
+
+    html = render_html_report(report_with_history)
+    assert "Data Quality Over Time" in html
+    assert "Q1 FY26" in html
+    assert report_with_history.history is not None
+    assert f"{report_with_history.history.since_previous:+.1f}" in html
+
+
+def test_the_word_report_states_the_movement(report_with_history, tmp_path):
+    from docx import Document
+
+    from grant_assistant.reporting import write_docx_report
+
+    path = write_docx_report(report_with_history, tmp_path / "r.docx")
+    text = "\n".join(p.text for p in Document(str(path)).paragraphs)
+    tables = "\n".join(
+        cell.text
+        for table in Document(str(path)).tables
+        for row in table.rows
+        for cell in row.cells
+    )
+    assert "Data Quality Over Time" in text
+    assert "Q1 FY26" in tables
+
+
+def test_the_profile_can_turn_the_section_off(report_with_history):
+    """Section selection governs the trend like every other section."""
+    from grant_assistant.reporting import render_html_report
+
+    report_with_history.profile.report.sections = [
+        s for s in report_with_history.profile.report.sections if s != "history"
+    ]
+    assert "Data Quality Over Time" not in render_html_report(report_with_history)
+
+
+def test_the_report_and_the_analyst_are_given_the_same_history(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    """One summary object, so a narrative sentence cannot contradict the table."""
+    from grant_assistant.agents import DataAnalystAgent
+    from grant_assistant.history import build_history_summary, load_history, record_run
+    from grant_assistant.reporting import build_report_data
+
+    db = tmp_path / "history.db"
+    record_run(profile, audit_flawed, analytics_flawed, db, label="Q1")
+    summary = build_history_summary(load_history(db), audit_clean, profile.profile_id)
+
+    agent = DataAnalystAgent(analytics_flawed, audit_clean, profile, history=summary)
+    data = build_report_data(analytics_flawed, audit_clean, profile, agent, summary)
+
+    assert data.history is summary
+    assert agent.fact_sheet["quality_history"]["score_change_since_previous_run"] == (
+        summary.since_previous
+    )

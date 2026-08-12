@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.14.0 — 2026-08-12
+
+### Added
+
+- **The recorded trend reaches the funder's report.** The history store has answered "is this
+  getting better?" since 1.9, but only for the CLI and the app — the document that actually goes
+  to the funder said nothing about it. Reports now carry a **Data Quality Over Time** section:
+  the movement since the previous recorded run, every run's score and findings, the rules open
+  for three or more consecutive runs, and what cleared. It renders in HTML, Word, PDF and
+  PowerPoint from one `HistorySummary`, and the section obeys the profile's `sections` list like
+  every other. No history database, no section — a first report claims no trend.
+- **The AI analyst is grounded in the same history**, through the fact sheet and a new
+  `get_quality_history` tool. Every movement is pre-differenced, because "are we improving?" is
+  answered by subtracting two scores and the analyst is forbidden from doing arithmetic. Without
+  recorded runs the fact sheet says so explicitly rather than staying silent, which would invite
+  a trend inferred from one snapshot.
+- **`grant-assistant report --history-db`** picks the database behind that section; it defaults
+  to the standard location and is omitted when that holds no runs for the profile.
+
+### Changed
+
+- **The static-chart backend is proved by rendering, not by importing.** `kaleido` 1.x drives a
+  browser it downloads on a separate command, so `uv sync --extra charts` alone left
+  `chart_backend_available()` claiming a backend that could not produce an image: the chart tests
+  ran and failed where they meant to skip, and `require_chart_backend()` advised installing an
+  extra that was already installed. Same defect and same fix as the PDF backend in 1.13.0. CI now
+  fetches that browser so the all-extras job keeps proving charts actually render.
+- **A corrected dataset comes back in the format it arrived in.** The app returned CSV whatever
+  was uploaded, so someone who works in Excel had to convert the file back — one more chance to
+  lose a leading zero off a client ID. A workbook now round-trips as a workbook.
+
 ## 1.13.0 — 2026-08-12
 
 ### Added
