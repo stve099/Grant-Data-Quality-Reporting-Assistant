@@ -8,6 +8,7 @@ when a profile changes shape between runs.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -133,3 +134,53 @@ def test_limit_returns_the_most_recent_runs(db, profile, audit_flawed, analytics
     recent = load_history(db, limit=2)
     # Most recent two, still presented oldest-first.
     assert [e.label for e in recent] == ["run3", "run4"]
+
+
+# -- Presentation-facing helpers ---------------------------------------------
+
+
+def test_history_frame_lists_every_run_oldest_first(db, profile, audit_flawed, analytics_flawed):
+    """One table definition, so the app and any export cannot disagree."""
+    from grant_assistant.history import history_frame
+
+    for day, label in enumerate(("Q1", "Q2")):
+        _record(
+            db,
+            profile,
+            audit_flawed,
+            analytics_flawed,
+            when=BASE + timedelta(days=day),
+            label=label,
+        )
+    frame = history_frame(load_history(db))
+
+    assert list(frame["Label"]) == ["Q1", "Q2"]
+    assert list(frame["Score"]) == [round(audit_flawed.overall_score, 1)] * 2
+    assert list(frame["Grade"]) == [audit_flawed.grade] * 2
+
+
+def test_history_frame_of_no_runs_still_has_its_columns():
+    """An empty table must render, not collapse to a shapeless frame."""
+    from grant_assistant.history import history_frame
+
+    frame = history_frame([])
+    assert frame.empty
+    assert "Score" in frame.columns
+
+
+def test_an_unlabelled_run_reads_as_a_dash(db, profile, audit_flawed, analytics_flawed):
+    from grant_assistant.history import history_frame
+
+    _record(db, profile, audit_flawed, analytics_flawed)
+    assert history_frame(load_history(db))["Label"][0] == "—"
+
+
+def test_the_default_database_can_be_redirected(monkeypatch, tmp_path):
+    """The web app has nowhere to type a path, so the environment is the control."""
+    from grant_assistant.history import DB_PATH_ENV_VAR, default_db_path
+
+    monkeypatch.delenv(DB_PATH_ENV_VAR, raising=False)
+    assert default_db_path() == Path("output") / "history.db"
+
+    monkeypatch.setenv(DB_PATH_ENV_VAR, str(tmp_path / "elsewhere.db"))
+    assert default_db_path() == tmp_path / "elsewhere.db"

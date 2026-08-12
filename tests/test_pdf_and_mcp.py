@@ -53,6 +53,56 @@ def test_pdf_report_raises_when_no_backend(
     assert "headless browser" in str(exc_info.value).lower()
 
 
+def test_installed_playwright_without_its_browser_is_not_a_backend(monkeypatch, tmp_path):
+    """The import alone used to count, so a missing download crashed instead of degrading."""
+    from grant_assistant.reporting import pdf_report
+
+    monkeypatch.setattr(pdf_report, "_playwright_available", lambda: True)
+    monkeypatch.setattr(pdf_report, "_find_edge", lambda: None)
+    monkeypatch.setattr(pdf_report, "_expected_chromium_revision", lambda: "9999")
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
+
+    assert pdf_report.pdf_backend() is None
+    hint = pdf_report.missing_backend_hint()
+    assert "playwright install chromium" in hint
+    assert "9999" in hint, "the hint should name the build that is missing"
+
+
+@pytest.mark.parametrize("layout", ["chromium", "chromium_headless_shell"])
+def test_the_expected_chromium_build_counts_as_a_backend(monkeypatch, tmp_path, layout):
+    """Either download satisfies a headless launch, so either one must count."""
+    from grant_assistant.reporting import pdf_report
+
+    monkeypatch.setattr(pdf_report, "_playwright_available", lambda: True)
+    monkeypatch.setattr(pdf_report, "_expected_chromium_revision", lambda: "9999")
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
+    (tmp_path / f"{layout}-9999").mkdir()
+
+    assert pdf_report.pdf_backend() == "playwright"
+
+
+def test_a_browser_from_a_different_playwright_does_not_count(monkeypatch, tmp_path):
+    """The pairing is the point: an older build is not one this playwright can launch."""
+    from grant_assistant.reporting import pdf_report
+
+    monkeypatch.setattr(pdf_report, "_playwright_available", lambda: True)
+    monkeypatch.setattr(pdf_report, "_find_edge", lambda: None)
+    monkeypatch.setattr(pdf_report, "_expected_chromium_revision", lambda: "9999")
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(tmp_path))
+    (tmp_path / "chromium-1234").mkdir()
+
+    assert pdf_report.pdf_backend() is None
+
+
+def test_the_real_playwright_manifest_names_a_chromium_build():
+    """The probe reads playwright's own manifest; a shape change must not pass silently."""
+    if importlib.util.find_spec("playwright") is None:
+        pytest.skip("playwright not installed")
+    from grant_assistant.reporting.pdf_report import _expected_chromium_revision
+
+    assert (_expected_chromium_revision() or "").isdigit()
+
+
 def test_report_includes_print_rules(analytics_flawed, audit_flawed, profile):
     """Pagination rules must ship, or PDFs break blocks across pages."""
     from grant_assistant.reporting import render_html_report

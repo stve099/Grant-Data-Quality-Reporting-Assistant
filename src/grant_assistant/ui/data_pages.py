@@ -20,6 +20,9 @@ from grant_assistant.ingestion import (
 )
 from grant_assistant.ui import theme
 from grant_assistant.ui.state import (
+    SOURCE_DROPPED_NOTE as _SOURCE_DROPPED_NOTE,
+)
+from grant_assistant.ui.state import (
     loaded as _loaded,
 )
 from grant_assistant.ui.state import (
@@ -27,6 +30,9 @@ from grant_assistant.ui.state import (
 )
 from grant_assistant.ui.state import (
     require_data as _require_data,
+)
+from grant_assistant.ui.state import (
+    source_frame as _source_frame,
 )
 from grant_assistant.ui.state import (
     store_pipeline as _store_pipeline,
@@ -127,8 +133,11 @@ def page_upload() -> None:
                 f"data quality score {audit.overall_score:.1f}/100 (grade {audit.grade}). "
                 "Open **Audit Dashboard** in the left rail to see the findings."
             )
-            source = p.get("source")
-            if source is not None and profile.profile_id != p["profile"].profile_id:
+            source = _source_frame()
+            different_profile = profile.profile_id != p["profile"].profile_id
+            if different_profile and source is None:
+                st.caption(_SOURCE_DROPPED_NOTE)
+            elif different_profile and source is not None:
                 # Selecting a different funder used to change nothing until the user
                 # re-uploaded. Re-running from the retained source frame is the whole
                 # reason it is kept.

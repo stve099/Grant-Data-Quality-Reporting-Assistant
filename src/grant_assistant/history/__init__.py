@@ -6,8 +6,11 @@ from grant_assistant.history.aging import (
     rule_ages,
 )
 from grant_assistant.history.store import (
+    DB_PATH_ENV_VAR,
     DEFAULT_DB_NAME,
     HistoryEntry,
+    default_db_path,
+    history_frame,
     load_history,
     metric_series,
     record_run,
@@ -15,9 +18,12 @@ from grant_assistant.history.store import (
 )
 
 __all__ = [
+    "DB_PATH_ENV_VAR",
     "DEFAULT_DB_NAME",
     "HistoryEntry",
     "RuleAge",
+    "default_db_path",
+    "history_frame",
     "load_history",
     "metric_series",
     "record_run",

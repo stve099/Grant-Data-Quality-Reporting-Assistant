@@ -46,7 +46,8 @@ analytics/      deterministic metrics, period comparison, plotly charts
 agents/         provider abstraction, fact sheet, tools, workflows, insights, analyst
 evals/          prompt-eval dataset, graders, runner, model_comparison
 security/       prompt-injection scrubbing and PII pre-flight for untrusted uploads
-corrections/    export flagged records, take fixes back, apply them to a copy
+corrections/    export flagged records, take fixes back, apply them to a copy, and
+                report the before/after both entry points show
 history/        SQLite run history + issue aging across reporting periods
 reporting/      HTML (Jinja2), Word, PDF, PowerPoint, Excel, data dictionary
 datagen/        synthetic clean + flawed sample generator with issue manifest
@@ -106,6 +107,11 @@ a profile that gains a measure needs no migration. If you add a column to `runs`
 `_migrate()`: databases created by earlier versions are expected to keep working, and
 there is a test that builds an old schema by hand to prove it.
 
+**A Streamlit page** — put the renderer in the `ui/*_pages.py` module for its section, export
+it from `ui/pages.py`, and register it in `app.py` in both `NAV` and the router. Then add its
+label to `ALL_PAGES` in `tests/test_ui_app.py`: that list is spelled out rather than imported
+so a rename fails loudly instead of skipping. Every page must render with no dataset loaded.
+
 **An MCP tool** — mirror an existing one in `mcp_server.py`, return aggregated shapes only,
 and give it a real description; a tool without one is unusable by a model choosing between
 ten. Add its name to the registration test.
@@ -131,6 +137,15 @@ Do not claim a feature works without running it.
   row stays active. Changing that will produce two highlighted rows.
 - PDF export lays the page out at 720px (Letter minus margins) because Plotly sizes its
   SVGs once at load; changing the viewport width will cut charts off the page.
+- The session keeps the pre-mapping source frame so a dataset can be re-run under another
+  profile or corrected in place, but only up to `ui.state.max_retained_source_rows()`. Above
+  it `pipeline["source"]` is `None` on purpose — read it through `state.source_frame()` and
+  offer `SOURCE_DROPPED_NOTE` rather than assuming a frame is there.
+- `store_pipeline` clears every derived session key, so anything you want to survive a
+  re-audit must be written *after* it, not before. `apply_correction_upload` is the example.
+- `pdf_backend()` requires the chromium build the installed playwright names in its own
+  `browsers.json`, not merely the import. Installing the `pdf` extra without running
+  `playwright install chromium` is a no-backend environment, and the tests skip accordingly.
 - Follow-up math lives in `followups.py` and is shared by audit rules and analytics so the
   two can never disagree. Change it in one place.
 - Tests must not read a developer's `.env`. Both entry points load it through

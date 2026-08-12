@@ -15,6 +15,7 @@ from grant_assistant.configuration import GrantProfile, load_profile
 from grant_assistant.datagen import generate_clean_dataset, inject_issues
 from grant_assistant.datagen.generator import H
 from grant_assistant.env import SKIP_DOTENV_ENV_VAR
+from grant_assistant.history import DB_PATH_ENV_VAR
 from grant_assistant.ingestion import PreparedData, prepare_dataset
 from grant_assistant.models import AuditResult
 
@@ -46,8 +47,20 @@ def _isolate_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
+        "GRANT_ASSISTANT_MAX_RETAINED_ROWS",
     ):
         monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_history_db(monkeypatch: pytest.MonkeyPatch, tmp_path_factory) -> None:
+    """Keep the app's default history database out of the developer's repo.
+
+    The web app records runs to ``output/history.db`` unless told otherwise. A
+    test that clicks Record would otherwise write into the working tree, and any
+    runs already there would be read back as this test's history.
+    """
+    monkeypatch.setenv(DB_PATH_ENV_VAR, str(tmp_path_factory.mktemp("history") / "history.db"))
 
 
 # A fully valid ACTIVE enrollment in source-file format.

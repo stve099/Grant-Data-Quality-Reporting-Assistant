@@ -457,7 +457,11 @@ def apply_corrections_command(
 ) -> None:
     """Apply a filled-in worksheet and re-audit to show what actually cleared."""
     from grant_assistant.audit import run_audit
-    from grant_assistant.corrections import apply_corrections, read_worksheet
+    from grant_assistant.corrections import (
+        CorrectionImpact,
+        apply_corrections,
+        read_worksheet,
+    )
     from grant_assistant.ingestion import load_dataset, prepare_dataset
 
     before = _run(data_file, profile, config_dir)
@@ -489,21 +493,14 @@ def apply_corrections_command(
         corrected.to_csv(output, index=False)
 
     after = run_audit(prepare_dataset(corrected, before.profile), before.profile)
+    impact = CorrectionImpact.between(before.audit, after)
 
     _echo_header("Before and after")
-    delta = after.overall_score - before.audit.overall_score
-    typer.echo(
-        f"  Data quality score  {before.audit.overall_score:.1f} -> {after.overall_score:.1f} "
-        f"({delta:+.1f})"
-    )
-    typer.echo(
-        f"  Findings            {before.audit.total_findings} -> {after.total_findings} "
-        f"({after.total_findings - before.audit.total_findings:+d})"
-    )
-    typer.echo(
-        f"  Blocking issues     {len(before.audit.blocking_issues)} -> {len(after.blocking_issues)}"
-    )
-    color = typer.colors.GREEN if delta >= 0 else typer.colors.RED
+    for line in impact.lines():
+        typer.echo(f"  {line}")
+    if impact.cleared_rules:
+        typer.secho(f"  Cleared: {', '.join(impact.cleared_rules)}", fg=typer.colors.GREEN)
+    color = typer.colors.GREEN if impact.score_delta >= 0 else typer.colors.RED
     typer.secho(f"\nCorrected dataset: {output}", fg=color)
 
 

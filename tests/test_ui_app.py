@@ -25,6 +25,7 @@ pytestmark = [
 ]
 
 APP_PATH = REPO_ROOT / "src" / "grant_assistant" / "ui" / "app.py"
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 FLAWED = REPO_ROOT / "sample_data" / "housing_program_flawed.csv"
 
 
@@ -101,6 +102,7 @@ ALL_PAGES = [
     "Issue Explorer",
     "Analytics Dashboard",
     "Period Comparison",
+    "Run History",
     "Analyst Chat",
     "Proactive Insights",
     "Report Builder",
@@ -401,3 +403,181 @@ def test_re_run_clears_the_agent_bound_to_the_previous_profile(loaded_app):
     next(b for b in loaded_app.button if "Re-run this dataset" in b.label).click().run()
 
     assert "agent" not in loaded_app.session_state
+
+
+# -- The correction round trip -----------------------------------------------
+# Exporting the worksheet shipped long before taking it back did, so the app
+# used to hand the user a spreadsheet and a command line. These drive the whole
+# loop through the interface a program manager actually has.
+
+
+def _filled_worksheet(app, value: str = "Rental by client, no ongoing subsidy") -> bytes:
+    """The loaded dataset's worksheet with every exit-destination row filled in."""
+    import io
+
+    import pandas as pd
+
+    from grant_assistant.corrections import SHEET_NAME, build_worksheet
+
+    frame = build_worksheet(app.session_state["pipeline"]["audit"])
+    targets = frame["Field"] == "exit_destination"
+    assert targets.any(), "the flawed sample should flag exit destinations"
+    frame.loc[targets, "Corrected Value"] = value
+
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        frame.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+    return buffer.getvalue()
+
+
+def test_export_center_takes_a_worksheet_back(loaded_app):
+    """The uploader is the half of the loop that used to live only in the CLI."""
+    _goto(loaded_app, "Export Center")
+    assert not loaded_app.exception
+    labels = [u.label for u in loaded_app.file_uploader]
+    assert any("correction worksheet" in label.casefold() for label in labels), labels
+
+
+def test_applying_a_worksheet_re_audits_the_loaded_dataset(loaded_app):
+    _goto(loaded_app, "Export Center")
+    before = loaded_app.session_state["pipeline"]["audit"].overall_score
+    payload = _filled_worksheet(loaded_app)
+
+    uploader = next(
+        u for u in loaded_app.file_uploader if "correction worksheet" in u.label.casefold()
+    )
+    uploader.set_value(("corrections.xlsx", payload, _XLSX_MIME)).run()
+    _click(loaded_app, "Apply corrections")
+    assert not loaded_app.exception
+
+    outcome = loaded_app.session_state["correction_outcome"]
+    assert outcome.report.applied > 0
+    assert outcome.impact.before_score == before
+    assert outcome.impact.after_score > before, "fixing what was flagged must raise the score"
+    # The whole session moves to the corrected data, not just this page.
+    assert loaded_app.session_state["pipeline"]["audit"].overall_score == outcome.impact.after_score
+    assert "(corrected)" in loaded_app.session_state["pipeline"]["filename"]
+    assert loaded_app.session_state["corrected_dataset"].startswith(b"Client ID")
+
+
+def test_a_worksheet_that_is_not_one_is_refused_on_screen(loaded_app):
+    """A wrong file must produce a message, not a traceback in the browser."""
+    _goto(loaded_app, "Export Center")
+    uploader = next(
+        u for u in loaded_app.file_uploader if "correction worksheet" in u.label.casefold()
+    )
+    uploader.set_value(("notes.csv", b"a,b\n1,2\n", "text/csv")).run()
+    _click(loaded_app, "Apply corrections")
+
+    assert not loaded_app.exception
+    assert "not a correction worksheet" in _text_of(loaded_app)
+    assert "correction_outcome" not in loaded_app.session_state
+
+
+def test_an_empty_worksheet_says_so_rather_than_re_auditing(loaded_app):
+    _goto(loaded_app, "Export Center")
+    payload = _filled_worksheet(loaded_app, value="")
+    uploader = next(
+        u for u in loaded_app.file_uploader if "correction worksheet" in u.label.casefold()
+    )
+    uploader.set_value(("corrections.xlsx", payload, _XLSX_MIME)).run()
+    _click(loaded_app, "Apply corrections")
+
+    assert not loaded_app.exception
+    assert "No corrections found" in _text_of(loaded_app)
+    assert "(corrected)" not in loaded_app.session_state["pipeline"]["filename"]
+
+
+# -- The retained source frame has a ceiling ---------------------------------
+
+
+def test_a_dataset_too_large_to_retain_says_what_it_costs(monkeypatch):
+    """Re-run and apply-corrections need a second copy; past the ceiling, they say so."""
+    monkeypatch.setenv("GRANT_ASSISTANT_MAX_RETAINED_ROWS", "1")
+    app = _app()
+    app.query_params["demo"] = "housing_program_flawed.csv"
+    app.query_params["profile"] = "housing_stability"
+    app.run()
+
+    assert not app.exception
+    assert app.session_state["pipeline"]["source"] is None, "the copy must be dropped"
+
+    _goto(app, "Upload & Profile")
+    box = next(s for s in app.selectbox if s.label == "Grant profile")
+    box.set_value("rapid_rehousing").run()
+    assert not any("Re-run this dataset" in b.label for b in app.button)
+    assert "too large to keep a second copy" in _text_of(app)
+
+    _goto(app, "Export Center")
+    assert not app.exception
+    assert not app.file_uploader, "no worksheet can be applied without the source frame"
+    assert "too large to keep a second copy" in _text_of(app)
+
+
+def test_the_ceiling_is_generous_enough_for_the_sample(loaded_app):
+    """The default must not quietly disable the features on an ordinary extract."""
+    from grant_assistant.ui.state import max_retained_source_rows
+
+    assert loaded_app.session_state["pipeline"]["source"] is not None
+    assert max_retained_source_rows() >= len(loaded_app.session_state["pipeline"]["prepared"].df)
+
+
+# -- Run history --------------------------------------------------------------
+
+
+def test_run_history_records_the_loaded_dataset(loaded_app):
+    """Every writer into the history store used to be a command line."""
+    from grant_assistant.history import default_db_path, load_history
+
+    _goto(loaded_app, "Run History")
+    assert not loaded_app.exception
+
+    label = next(t for t in loaded_app.text_input if "Label" in t.label)
+    label.set_value("Q3 FY26").run()
+    _click(loaded_app, "Record run")
+    assert not loaded_app.exception
+
+    entries = load_history(default_db_path())
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.label == "Q3 FY26"
+    assert entry.score == loaded_app.session_state["pipeline"]["audit"].overall_score
+    assert entry.source == loaded_app.session_state["pipeline"]["filename"]
+    assert entry.rule_counts, "rule counts are what makes aging possible"
+    assert "Recorded run #" in _text_of(loaded_app)
+
+
+def test_run_history_shows_the_trend_across_runs(loaded_app):
+    _goto(loaded_app, "Run History")
+    _click(loaded_app, "Record run")
+    _click(loaded_app, "Record run")
+    assert not loaded_app.exception
+
+    table = next(
+        (df.value for df in loaded_app.dataframe if "Score" in getattr(df.value, "columns", [])),
+        None,
+    )
+    assert table is not None, "no run table on the Run History page"
+    assert len(table) == 2
+    assert "2" in _text_of(loaded_app)
+
+
+def test_run_history_without_a_dataset_still_renders():
+    """The page reads history as well as writing it, so it must work before an upload."""
+    app = _app().run()
+    _goto(app, "Run History")
+    assert not app.exception
+    assert "No runs recorded yet" in _text_of(app)
+    assert not app.button, "nothing to record without a dataset"
+
+
+def test_run_history_ages_findings_against_the_recorded_runs(loaded_app):
+    """Aging is the reason rule counts are stored; the page must surface it."""
+    _goto(loaded_app, "Run History")
+    _click(loaded_app, "Record run")
+    _click(loaded_app, "Record run")
+    _click(loaded_app, "Record run")
+    assert not loaded_app.exception
+
+    text = _text_of(loaded_app)
+    assert "consecutive runs" in text, text[-800:]

@@ -1,5 +1,6 @@
 """Correction round-trip: export flagged records, take fixes back, verify them."""
 
+from grant_assistant.corrections.impact import CorrectionImpact
 from grant_assistant.corrections.worksheet import (
     CLEAR_TOKEN,
     SHEET_NAME,
@@ -9,6 +10,7 @@ from grant_assistant.corrections.worksheet import (
     apply_corrections,
     build_worksheet,
     read_worksheet,
+    read_worksheet_bytes,
     write_worksheet,
 )
 
@@ -18,8 +20,10 @@ __all__ = [
     "WORKSHEET_COLUMNS",
     "ApplyReport",
     "Correction",
+    "CorrectionImpact",
     "apply_corrections",
     "build_worksheet",
     "read_worksheet",
+    "read_worksheet_bytes",
     "write_worksheet",
 ]

@@ -18,7 +18,13 @@ from grant_assistant.reporting import (
 )
 from grant_assistant.ui import theme
 from grant_assistant.ui.state import (
+    SOURCE_DROPPED_NOTE as _SOURCE_DROPPED_NOTE,
+)
+from grant_assistant.ui.state import (
     agent as _agent,
+)
+from grant_assistant.ui.state import (
+    apply_correction_upload as _apply_correction_upload,
 )
 from grant_assistant.ui.state import (
     output_dir as _output_dir,
@@ -26,12 +32,21 @@ from grant_assistant.ui.state import (
 from grant_assistant.ui.state import (
     require_data as _require_data,
 )
+from grant_assistant.ui.state import (
+    source_frame as _source_frame,
+)
+from grant_assistant.ui.theme import Kpi
 
 
 def page_report() -> None:
     if not _require_data("Report Builder"):
         return
-    from grant_assistant.reporting import PdfBackendError, pdf_backend, write_pdf_report
+    from grant_assistant.reporting import (
+        PdfBackendError,
+        missing_backend_hint,
+        pdf_backend,
+        write_pdf_report,
+    )
 
     p = st.session_state["pipeline"]
     agent = _agent()
@@ -103,10 +118,7 @@ def page_report() -> None:
                 use_container_width=True,
             )
         elif pdf_backend() is None:
-            st.caption(
-                "PDF needs a headless browser: `uv sync --extra pdf` then "
-                "`uv run playwright install chromium`."
-            )
+            st.caption(missing_backend_hint())
         elif st.button("Render PDF", use_container_width=True):
             with st.spinner("Rendering PDF…"):
                 try:
@@ -127,6 +139,83 @@ def page_report() -> None:
 # ---------------------------------------------------------------------------
 # Page: Export Center
 # ---------------------------------------------------------------------------
+
+
+def _correction_round_trip() -> None:
+    """Take a filled-in worksheet back, apply it, and show what actually cleared.
+
+    The export half of the loop shipped long before this half, so the app told
+    users to finish the job in a terminal — which the people this tool is for do
+    not have open.
+    """
+    theme.panel_title("Apply corrections", "return a filled-in worksheet")
+    if _source_frame() is None:
+        st.caption(_SOURCE_DROPPED_NOTE)
+        return
+
+    filled = st.file_uploader(
+        "Filled-in correction worksheet",
+        type=["xlsx", "xlsm", "xls", "csv"],
+        key="corrections_return",
+        help="The worksheet exported above, with the 'Corrected Value' column filled in. "
+        "Corrections are applied to a copy — the file you uploaded is never modified.",
+    )
+    if filled is not None and st.button(
+        "Apply corrections and re-audit", type="primary", use_container_width=True
+    ):
+        try:
+            _apply_correction_upload(filled.getvalue(), filled.name)
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        st.rerun()
+
+    outcome = st.session_state.get("correction_outcome")
+    if outcome is None:
+        return
+
+    impact = outcome.impact
+    st.success(f"{outcome.report.summary()} from **{outcome.filename}**, then re-audited.")
+    theme.kpis(
+        [
+            Kpi(
+                "Data quality score",
+                f"{impact.after_score:.1f}",
+                note=f"was {impact.before_score:.1f} ({impact.score_delta:+.1f})",
+                tone="good" if impact.improved else "warning",
+            ),
+            Kpi(
+                "Findings",
+                str(impact.after_findings),
+                note=f"was {impact.before_findings} ({impact.findings_delta:+d})",
+            ),
+            Kpi(
+                "Blocking issues",
+                str(impact.after_blocking),
+                note=f"was {impact.before_blocking} ({impact.blocking_delta:+d})",
+                tone="good" if impact.after_blocking == 0 else "critical",
+            ),
+        ]
+    )
+    if impact.cleared_rules:
+        st.markdown("**Cleared entirely:** " + ", ".join(impact.cleared_rules))
+    if outcome.report.skipped:
+        with st.expander(f"{len(outcome.report.skipped)} correction(s) skipped"):
+            # Every refusal is shown. A silently dropped edit is the one outcome
+            # a user would never think to check for.
+            for reason in outcome.report.skipped:
+                st.write(f"- {reason}")
+    st.download_button(
+        "corrected_dataset.csv",
+        data=st.session_state["corrected_dataset"],
+        file_name="corrected_dataset.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+    st.caption(
+        "Every page now reflects the corrected dataset. Download it to take the fixes "
+        "back to your case management system."
+    )
 
 
 def page_exports() -> None:
@@ -177,8 +266,8 @@ def page_exports() -> None:
                 use_container_width=True,
             )
             st.caption(
-                "Fill in 'Corrected Value', then apply it with: "
-                "`grant-assistant apply-corrections <data file> corrections.xlsx`"
+                "Fill in 'Corrected Value', then return the file under **Apply corrections** "
+                "below to re-audit this dataset with the fixes in place."
             )
 
     with col2:
@@ -202,6 +291,8 @@ def page_exports() -> None:
             mime="application/json",
             use_container_width=True,
         )
+
+    _correction_round_trip()
 
     theme.panel_title("Reports", "built on the Report Builder page")
     if "report_html" in st.session_state or "report_docx" in st.session_state:

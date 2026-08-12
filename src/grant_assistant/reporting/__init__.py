@@ -11,7 +11,12 @@ from grant_assistant.reporting.excel_export import (
     write_audit_workbook,
 )
 from grant_assistant.reporting.html_report import render_html_report, write_html_report
-from grant_assistant.reporting.pdf_report import PdfBackendError, pdf_backend, write_pdf_report
+from grant_assistant.reporting.pdf_report import (
+    PdfBackendError,
+    missing_backend_hint,
+    pdf_backend,
+    write_pdf_report,
+)
 from grant_assistant.reporting.pptx_report import PptxBackendError, write_pptx_report
 
 __all__ = [
@@ -20,6 +25,7 @@ __all__ = [
     "ReportData",
     "build_data_dictionary",
     "build_report_data",
+    "missing_backend_hint",
     "pdf_backend",
     "render_html_report",
     "write_analytics_workbook",
