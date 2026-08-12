@@ -4,8 +4,9 @@ name: Claude Code Review
 # deterministic calculation, aggregate-only AI context, and test coverage for
 # every new rule or metric.
 #
-# Requires an ANTHROPIC_API_KEY repository secret. Without it the job is
-# skipped, so forks and clones still pass CI.
+# Requires an ANTHROPIC_API_KEY repository secret. Without it the review step
+# is skipped and the job still passes, so forks and clones are not blocked by a
+# review that could never have run.
 
 on:
   pull_request:
@@ -14,18 +15,25 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
-    # Skip when the secret is absent (forks, clones) rather than failing.
+    # A pull request from a fork cannot read the secret at all.
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     permissions:
       contents: read
       pull-requests: write
       id-token: write
+    env:
+      # The secrets context reaches a job's env but not its `if`, so presence is
+      # tested here and read by the step below. Without this the action installs
+      # itself and only then fails validation, which fails the whole check --
+      # the opposite of the degradation this workflow documents.
+      HAS_ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Review with Claude
+        if: ${{ env.HAS_ANTHROPIC_KEY == 'true' }}
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
