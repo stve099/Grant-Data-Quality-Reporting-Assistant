@@ -36,6 +36,14 @@ _DERIVED_KEYS = (
     "report_pdf",
     "correction_outcome",
     "corrected_dataset",
+    # Prepared download bytes. They are built from a specific audit and analytics,
+    # so a workbook left over from before a re-run or a correction would offer the
+    # old figures under a page reporting the new ones.
+    "export_audit",
+    "export_analytics",
+    "export_corrections",
+    # Runs this session recorded for the dataset being replaced; see aging below.
+    "recorded_run_ids",
 )
 
 #: Rows above which the pre-mapping source frame is dropped rather than kept in

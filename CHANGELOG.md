@@ -31,6 +31,20 @@
 
 ### Fixed
 
+- **Prepared downloads outlived the audit they were built from.** An audit workbook, analytics
+  workbook, or correction worksheet prepared in the Export Center survived a profile re-run and
+  a correction round, so the page could offer artifacts computed from the previous dataset
+  while reporting the new one. They are cleared with the rest of the derived session state.
+- **Issue aging counted the current run as its own history.** Recording the loaded dataset adds
+  a row saying what the loaded audit already says, and aging counts the current audit as one
+  run on top of that, so one dataset recorded three times read as a finding open for three
+  consecutive periods — the precise claim the panel exists to make. Runs recorded from the
+  session's own dataset are excluded from its aging basis, and the panel now lists every
+  finding's age rather than only the new and the long-standing ones, which dropped anything
+  carried over from exactly one earlier run.
+- **Run History mixed profiles when no dataset was loaded.** It read every recorded run
+  regardless of profile, combining scores calculated under different funders' rules into one
+  trend. It now scopes to the loaded profile, or asks which one when nothing is loaded.
 - **PDF export degraded to a traceback when playwright was installed without its browser.**
   `pdf_backend()` probed only for the import, so `report --format all` crashed instead of
   skipping the PDF, and the PDF tests failed instead of skipping. It now checks that the
