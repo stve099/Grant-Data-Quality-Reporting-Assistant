@@ -103,14 +103,11 @@ jobs:
         # the two in step -- a browser from another version does not count.
         run: uv run playwright install --with-deps chromium
 
-      - name: Install the browser kaleido renders charts through
-        # kaleido 1.x downloads its browser on a separate command, so the extra
-        # alone leaves chart_backend_available() false and the chart tests
-        # skipping -- which is the one thing this job exists to prevent.
-        run: uv run plotly_get_chrome -y
-
       - name: Confirm every optional backend is actually present
         # A silent skip here would defeat the entire point of this job.
+        # chart_backend_available() proves itself by rendering, so this also
+        # catches a runner image that stops shipping the browser kaleido finds;
+        # the fix would be a `plotly_get_chrome -y` step added right here.
         run: |
           uv run python -c "
           import importlib.util as u
