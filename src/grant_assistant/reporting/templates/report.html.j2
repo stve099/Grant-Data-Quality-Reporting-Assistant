@@ -128,6 +128,33 @@
 {% if charts.dq_severity %}<div class="chart">{{ charts.dq_severity }}</div>{% endif %}
 {% endif %}
 
+{% if r.has_history and r.includes("history") %}
+<h2>Data Quality Over Time</h2>
+<p>{{ r.history.headline() }}</p>
+<div class="kpis">
+  <div class="kpi"><div class="v">{{ r.history.runs }}</div><div class="l">Previous runs recorded</div></div>
+  <div class="kpi"><div class="v">{{ "%+.1f"|format(r.history.since_previous) if r.history.since_previous is not none else "n/a" }}</div><div class="l">Points since the previous run</div></div>
+  <div class="kpi"><div class="v">{{ "%+.1f"|format(r.history.score_delta) if r.history.score_delta is not none else "n/a" }}</div><div class="l">Points across all recorded runs</div></div>
+  <div class="kpi"><div class="v">{{ r.history.resolved_rule_ids|length }}</div><div class="l">Rules resolved since last run</div></div>
+</div>
+<table>
+  <thead><tr><th>Run</th><th>Recorded</th><th class="num">Score</th><th class="num">Findings</th><th class="num">Blocking</th></tr></thead>
+  <tbody>
+  {% for point in r.history.points %}
+    <tr><td>{{ point.label }}</td><td>{{ point.recorded_at[:10] }}</td><td class="num">{{ "%.1f"|format(point.score) }}</td><td class="num">{{ point.findings }}</td><td class="num">{{ point.blocking }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if r.history.persistent_findings %}
+<div class="note"><strong>Long-standing findings.</strong> Open for three or more consecutive runs, which points at a process rather than a one-off entry error:
+  <ul>{% for f in r.history.persistent_findings %}<li>{{ f.describe() }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if r.history.resolved_rule_ids %}
+<p>Resolved since the previous recorded run: {{ r.history.resolved_rule_ids|join(", ") }}.</p>
+{% endif %}
+{% endif %}
+
 {% if r.includes("population") %}
 <h2>Population Served</h2>
 <div class="kpis">

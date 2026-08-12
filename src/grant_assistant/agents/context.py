@@ -13,14 +13,54 @@ from typing import Any
 
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
+from grant_assistant.history import HistorySummary
 from grant_assistant.models import AuditResult
 from grant_assistant.security import sanitize_mapping, sanitize_text
+
+
+def history_facts(history: HistorySummary) -> dict[str, Any]:
+    """The recorded trend, as grounded facts rather than something to infer.
+
+    Every movement is pre-differenced here for the same reason no other number is
+    left to the model: asked "are we improving?", a model without these values
+    would subtract two scores itself, which the system prompt forbids and which
+    is exactly how a wrong figure reaches a funder.
+    """
+    return {
+        "recorded_runs": history.runs,
+        "latest_recorded_score": history.latest_score,
+        "score_change_since_previous_run": history.since_previous,
+        "score_change_across_all_recorded_runs": history.score_delta,
+        "trend": [
+            {
+                "label": sanitize_text(point.label),
+                "recorded_at": point.recorded_at,
+                "score": point.score,
+                "findings": point.findings,
+                "blocking": point.blocking,
+            }
+            for point in history.points
+        ],
+        "long_standing_findings": [
+            {
+                "rule_id": finding.rule_id,
+                "name": sanitize_text(finding.rule_name),
+                "records": finding.records,
+                "consecutive_runs": finding.consecutive_runs,
+                "first_seen": sanitize_text(finding.first_seen),
+                "change_since_previous_run": finding.change,
+            }
+            for finding in history.persistent_findings
+        ],
+        "resolved_since_previous_run": list(history.resolved_rule_ids),
+    }
 
 
 def build_fact_sheet(
     analytics: AnalyticsResult,
     audit: AuditResult | None,
     profile: GrantProfile,
+    history: HistorySummary | None = None,
 ) -> dict[str, Any]:
     """Assemble the aggregated, sanitized fact sheet for AI grounding."""
     sheet: dict[str, Any] = {
@@ -107,6 +147,10 @@ def build_fact_sheet(
         }
     else:
         sheet["data_quality"] = "not audited in this session"
+    if history is not None and history.runs:
+        sheet["quality_history"] = history_facts(history)
+    else:
+        sheet["quality_history"] = "no previous runs recorded — do not describe a trend"
     return sheet
 
 

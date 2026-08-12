@@ -88,6 +88,7 @@ class PerformanceMeasure(BaseModel):
 REPORT_SECTION_NAMES = (
     "executive_summary",
     "data_quality",
+    "history",
     "population",
     "demographics",
     "enrollment",

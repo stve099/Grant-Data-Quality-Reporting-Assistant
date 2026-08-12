@@ -920,3 +920,72 @@ def test_scheduled_audit_dry_run_rejects_credentials_without_tls(tmp_path, monke
 
     assert result.exit_code == 2
     assert "credentials require TLS" in result.output
+
+
+def test_report_includes_the_trend_when_history_exists(tmp_path):
+    """The trend reached the CLI and the app long before the funder's document."""
+    db = tmp_path / "history.db"
+    recorded = runner.invoke(
+        app,
+        [
+            "record-run",
+            str(FLAWED),
+            "--profile",
+            "rapid_rehousing",
+            "--config-dir",
+            str(CONFIG_DIR),
+            "--db",
+            str(db),
+            "--label",
+            "Q1 FY26",
+        ],
+    )
+    assert recorded.exit_code == 0
+
+    result = runner.invoke(
+        app,
+        [
+            "report",
+            str(FLAWED),
+            "--profile",
+            "rapid_rehousing",
+            "--config-dir",
+            str(CONFIG_DIR),
+            "--output",
+            str(tmp_path),
+            "--format",
+            "html",
+            "--history-db",
+            str(db),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "History:" in result.output
+    html = (tmp_path / "grant_report.html").read_text(encoding="utf-8")
+    assert "Data Quality Over Time" in html
+    assert "Q1 FY26" in html
+
+
+def test_report_without_history_says_nothing_about_a_trend(tmp_path):
+    result = runner.invoke(
+        app,
+        [
+            "report",
+            str(FLAWED),
+            "--profile",
+            "rapid_rehousing",
+            "--config-dir",
+            str(CONFIG_DIR),
+            "--output",
+            str(tmp_path),
+            "--format",
+            "html",
+            "--history-db",
+            str(tmp_path / "absent.db"),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "History:" not in result.output
+    assert "Data Quality Over Time" not in (tmp_path / "grant_report.html").read_text(
+        encoding="utf-8"
+    )

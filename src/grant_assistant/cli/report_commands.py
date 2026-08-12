@@ -41,6 +41,14 @@ def report(
     ai: Annotated[
         bool, typer.Option(help="Use the AI provider for narrative if configured.")
     ] = True,
+    history_db: Annotated[
+        Path | None,
+        typer.Option(
+            "--history-db",
+            help="History database for the trend section. Defaults to the standard "
+            "location; the section is omitted when it holds no runs for this profile.",
+        ),
+    ] = None,
 ) -> None:
     """Generate the grant outcome report (HTML/Word/PDF) plus Excel workbooks."""
     from grant_assistant.reporting.html_report import TEMPLATES
@@ -56,7 +64,14 @@ def report(
         typer.secho("--format must be html, docx, pdf, pptx, or all", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     result = _run(data_file, profile, config_dir)
-    agent = result.make_agent(use_ai=ai)
+    from grant_assistant.history import load_history_summary
+
+    # Recorded runs turn a snapshot into a trend, which is what a funder asks
+    # about. Absent database, absent section — no configuration required either way.
+    summary = load_history_summary(history_db, result.profile.profile_id, result.audit)
+    if summary is not None:
+        typer.echo(f"History: {summary.headline()}")
+    agent = result.make_agent(use_ai=ai, history=summary)
     typer.echo(
         "Narrative mode: "
         + ("AI-assisted (grounded)" if agent.ai_enabled else "deterministic (non-AI mode)")
@@ -74,7 +89,7 @@ def report(
         write_pptx_report,
     )
 
-    data = build_report_data(result.analytics, result.audit, result.profile, agent)
+    data = build_report_data(result.analytics, result.audit, result.profile, agent, summary)
     suffix = "" if template == "full" else f"_{template}"
     written: list[Path] = []
     if fmt in {"html", "all"}:

@@ -1,6 +1,6 @@
 [project]
 name = "grant-assistant"
-version = "1.13.0"
+version = "1.14.0"
 description = "Grant Data Quality & Reporting Assistant - audits program data, computes grant performance measures, and generates reports with a grounded AI data analyst."
 readme = "README.md"
 requires-python = ">=3.12"

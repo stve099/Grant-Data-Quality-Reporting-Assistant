@@ -126,3 +126,55 @@ def test_agent_routes_through_tool_loop(analytics_flawed, audit_flawed, profile)
     answer = agent.ask("What is the successful exit rate?")
     assert provider.tool_calls == ["get_metric"]
     assert str(analytics_flawed.successful_exit_rate) in answer
+
+
+# -- Quality history ---------------------------------------------------------
+#
+# The trend is the one thing the analyst is most likely to be asked about and
+# the one thing it must never derive itself: "are we improving?" is answered by
+# subtracting two scores, which the system prompt bans outright.
+
+
+def _summary(audit, entries=()):
+    from grant_assistant.history import build_history_summary
+
+    return build_history_summary(list(entries), audit, "housing_stability")
+
+
+def test_history_tool_says_so_when_nothing_is_recorded(analytics_flawed, audit_flawed, profile):
+    from grant_assistant.agents.tools import AnalystTools
+
+    tools = AnalystTools(analytics_flawed, audit_flawed, profile)
+    result = json.loads(tools.execute("get_quality_history", {}))
+    assert result["recorded_runs"] == 0
+    assert "no trend" in result["note"].casefold()
+
+
+def test_history_tool_returns_pre_calculated_movement(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    from grant_assistant.agents.tools import AnalystTools
+    from grant_assistant.history import build_history_summary, load_history, record_run
+
+    db = tmp_path / "history.db"
+    record_run(profile, audit_flawed, analytics_flawed, db, label="Q1")
+    summary = build_history_summary(load_history(db), audit_clean, profile.profile_id)
+
+    tools = AnalystTools(analytics_flawed, audit_clean, profile, summary)
+    result = json.loads(tools.execute("get_quality_history", {}))
+
+    assert result["recorded_runs"] == 1
+    # The model must never need to subtract: the difference is handed to it.
+    assert result["score_change_since_previous_run"] == round(
+        audit_clean.overall_score - audit_flawed.overall_score, 1
+    )
+    assert result["trend"][0]["label"] == "Q1"
+
+
+def test_the_history_tool_is_registered(analytics_flawed, audit_flawed, profile):
+    from grant_assistant.agents.tools import AnalystTools
+
+    names = {schema["name"] for schema in AnalystTools.schemas()}
+    assert "get_quality_history" in names
+    described = next(s for s in AnalystTools.schemas() if s["name"] == "get_quality_history")
+    assert len(described["description"]) > 60, "a tool without a real description is unusable"

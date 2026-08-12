@@ -81,11 +81,22 @@ def test_figure_png_returns_none_without_a_backend(monkeypatch):
     assert figure_png(go.Figure()) is None
 
 
-def test_require_chart_backend_names_the_fix(monkeypatch):
+def test_require_chart_backend_names_the_fix_when_kaleido_is_absent(monkeypatch):
     monkeypatch.setattr(
         "grant_assistant.reporting.chart_images.chart_backend_available", lambda: False
     )
+    monkeypatch.setattr("grant_assistant.reporting.chart_images._kaleido_installed", lambda: False)
     with pytest.raises(ChartBackendError, match="--extra charts"):
+        require_chart_backend()
+
+
+def test_require_chart_backend_names_the_browser_when_that_is_what_is_missing(monkeypatch):
+    """Installing the extra is useless advice when the extra is already installed."""
+    monkeypatch.setattr(
+        "grant_assistant.reporting.chart_images.chart_backend_available", lambda: False
+    )
+    monkeypatch.setattr("grant_assistant.reporting.chart_images._kaleido_installed", lambda: True)
+    with pytest.raises(ChartBackendError, match="plotly_get_chrome"):
         require_chart_backend()
 
 

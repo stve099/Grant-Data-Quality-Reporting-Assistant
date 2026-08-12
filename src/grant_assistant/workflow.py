@@ -13,6 +13,7 @@ from grant_assistant.agents import DataAnalystAgent, get_provider
 from grant_assistant.analytics import AnalyticsResult, compute_analytics
 from grant_assistant.audit import run_audit
 from grant_assistant.configuration import GrantProfile, load_profile, load_profile_file
+from grant_assistant.history import HistorySummary
 from grant_assistant.ingestion import PreparedData, load_dataset, prepare_dataset
 from grant_assistant.models import AuditResult
 
@@ -45,9 +46,13 @@ class PipelineResult:
     audit: AuditResult
     analytics: AnalyticsResult
 
-    def make_agent(self, use_ai: bool = True) -> DataAnalystAgent:
+    def make_agent(
+        self, use_ai: bool = True, history: HistorySummary | None = None
+    ) -> DataAnalystAgent:
         provider = get_provider() if use_ai else None
-        return DataAnalystAgent(self.analytics, self.audit, self.profile, provider=provider)
+        return DataAnalystAgent(
+            self.analytics, self.audit, self.profile, provider=provider, history=history
+        )
 
 
 def run_pipeline_on_frame(

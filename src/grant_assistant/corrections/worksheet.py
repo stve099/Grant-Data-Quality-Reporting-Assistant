@@ -224,6 +224,33 @@ def _read_source(source: Any, name: str, suffix: str) -> list[Correction]:
     return corrections
 
 
+#: Extensions that round-trip as a workbook rather than as delimited text.
+EXCEL_SUFFIXES = frozenset({".xlsx", ".xlsm", ".xls"})
+
+_EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def corrected_download(frame: pd.DataFrame, source_filename: str) -> tuple[bytes, str, str]:
+    """(bytes, filename, mime) for a corrected dataset, in the format it arrived in.
+
+    Someone who uploads a workbook has a system that reads workbooks; handing
+    back a CSV makes them convert it, which is one more chance to lose a leading
+    zero off a client ID. The CLI already honours its --output suffix, so this
+    keeps the app from being the odd one out.
+    """
+    stem = Path(source_filename).stem or "corrected_dataset"
+    if Path(source_filename).suffix.lower() in EXCEL_SUFFIXES:
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            frame.to_excel(writer, index=False)
+        return buffer.getvalue(), f"{stem}_corrected.xlsx", _EXCEL_MIME
+    return (
+        frame.to_csv(index=False).encode("utf-8"),
+        f"{stem}_corrected.csv",
+        "text/csv",
+    )
+
+
 def _source_header(canonical: str, prepared: PreparedData, source: pd.DataFrame) -> str | None:
     """The source column a canonical field came from, if the upload had one."""
     for header, mapped_to in prepared.mapped_columns.items():

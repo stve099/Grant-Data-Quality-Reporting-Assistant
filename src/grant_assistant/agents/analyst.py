@@ -19,6 +19,7 @@ from grant_assistant.agents.tools import AnalystTools
 from grant_assistant.agents.workflows import Intent, classify_question
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
+from grant_assistant.history import HistorySummary
 from grant_assistant.models import AuditResult
 from grant_assistant.security import sanitize_text
 
@@ -75,13 +76,15 @@ class DataAnalystAgent:
         audit: AuditResult | None,
         profile: GrantProfile,
         provider: AIProvider | None = None,
+        history: HistorySummary | None = None,
     ) -> None:
         self.analytics = analytics
         self.audit = audit
         self.profile = profile
         self.provider = provider
-        self.fact_sheet = build_fact_sheet(analytics, audit, profile)
-        self.tools = AnalystTools(analytics, audit, profile)
+        self.history = history
+        self.fact_sheet = build_fact_sheet(analytics, audit, profile, history)
+        self.tools = AnalystTools(analytics, audit, profile, history)
 
     @property
     def ai_enabled(self) -> bool:

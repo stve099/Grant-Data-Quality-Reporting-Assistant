@@ -33,6 +33,9 @@ from grant_assistant.ui.state import (
     require_data as _require_data,
 )
 from grant_assistant.ui.state import (
+    session_history as _session_history,
+)
+from grant_assistant.ui.state import (
     source_frame as _source_frame,
 )
 from grant_assistant.ui.theme import Kpi
@@ -76,7 +79,9 @@ def page_report() -> None:
 
     if st.button("Build report", type="primary"):
         with st.spinner("Generating report…"):
-            data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
+            data = build_report_data(
+                p["analytics"], p["audit"], p["profile"], agent, _session_history()
+            )
             st.session_state["report_template"] = template
             st.session_state["report_html"] = render_html_report(data, template=template)
             st.session_state["report_docx"] = write_docx_report(
@@ -122,7 +127,9 @@ def page_report() -> None:
         elif st.button("Render PDF", use_container_width=True):
             with st.spinner("Rendering PDF…"):
                 try:
-                    data = build_report_data(p["analytics"], p["audit"], p["profile"], agent)
+                    data = build_report_data(
+                        p["analytics"], p["audit"], p["profile"], agent, _session_history()
+                    )
                     st.session_state["report_pdf"] = write_pdf_report(
                         data,
                         _output_dir() / "grant_report.pdf",
@@ -205,11 +212,12 @@ def _correction_round_trip() -> None:
             # a user would never think to check for.
             for reason in outcome.report.skipped:
                 st.write(f"- {reason}")
+    payload, download_name, mime = st.session_state["corrected_dataset"]
     st.download_button(
-        "corrected_dataset.csv",
-        data=st.session_state["corrected_dataset"],
-        file_name="corrected_dataset.csv",
-        mime="text/csv",
+        download_name,
+        data=payload,
+        file_name=download_name,
+        mime=mime,
         use_container_width=True,
     )
     st.caption(

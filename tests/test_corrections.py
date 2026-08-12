@@ -7,6 +7,8 @@ refusing, so the mismatch cases carry as much weight here as the happy path.
 
 from __future__ import annotations
 
+import io
+
 import pandas as pd
 import pytest
 
@@ -275,3 +277,29 @@ def test_an_unchanged_audit_reports_no_movement(audit_flawed):
     assert impact.findings_delta == 0
     assert impact.cleared_rules == ()
     assert not impact.improved
+
+
+# -- Handing the data back ----------------------------------------------------
+
+
+def test_a_csv_upload_comes_back_as_csv(flawed_source):
+    from grant_assistant.corrections import corrected_download
+
+    payload, name, mime = corrected_download(flawed_source, "housing_program_flawed.csv")
+    assert name == "housing_program_flawed_corrected.csv"
+    assert mime == "text/csv"
+    assert payload.startswith(b"Client ID")
+
+
+def test_a_workbook_upload_comes_back_as_a_workbook(flawed_source):
+    """Handing a CSV back to someone whose system reads workbooks costs them a conversion."""
+    from grant_assistant.corrections import corrected_download
+
+    payload, name, mime = corrected_download(flawed_source, "Q3 extract.xlsx")
+    assert name == "Q3 extract_corrected.xlsx"
+    assert "spreadsheetml" in mime
+    assert payload[:2] == b"PK", "xlsx files are zip archives"
+
+    round_tripped = pd.read_excel(io.BytesIO(payload), dtype=str, keep_default_na=False)
+    assert len(round_tripped) == len(flawed_source)
+    assert list(round_tripped.columns) == list(flawed_source.columns)
