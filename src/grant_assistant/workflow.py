@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
+
 from grant_assistant.agents import DataAnalystAgent, get_provider
 from grant_assistant.analytics import AnalyticsResult, compute_analytics
 from grant_assistant.audit import run_audit
@@ -48,6 +50,27 @@ class PipelineResult:
         return DataAnalystAgent(self.analytics, self.audit, self.profile, provider=provider)
 
 
+def run_pipeline_on_frame(
+    source: pd.DataFrame,
+    grant_profile: GrantProfile,
+    today: date | None = None,
+) -> PipelineResult:
+    """Prepare, audit, and analyze an already-loaded source frame.
+
+    Takes the *source* frame — original headers, before mapping — because the
+    profile is what decides which headers map and which are dropped. Re-running a
+    dataset under a different profile therefore has to start here;
+    :attr:`PreparedData.raw` is already mapped and cannot be re-prepared.
+    """
+    prepared = prepare_dataset(source, grant_profile)
+    return PipelineResult(
+        profile=grant_profile,
+        prepared=prepared,
+        audit=run_audit(prepared, grant_profile, today=today),
+        analytics=compute_analytics(prepared, grant_profile, as_of=today),
+    )
+
+
 def run_pipeline(
     data_path: str | Path,
     profile: str,
@@ -56,10 +79,4 @@ def run_pipeline(
 ) -> PipelineResult:
     """Load, prepare, audit, and analyze a dataset with one call."""
     grant_profile = resolve_profile(profile, config_dir)
-    raw = load_dataset(data_path)
-    prepared = prepare_dataset(raw, grant_profile)
-    audit = run_audit(prepared, grant_profile, today=today)
-    analytics = compute_analytics(prepared, grant_profile, as_of=today)
-    return PipelineResult(
-        profile=grant_profile, prepared=prepared, audit=audit, analytics=analytics
-    )
+    return run_pipeline_on_frame(load_dataset(data_path), grant_profile, today=today)

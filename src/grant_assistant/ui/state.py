@@ -5,15 +5,48 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from grant_assistant.agents import DataAnalystAgent, get_provider
-from grant_assistant.configuration import ProfileValidationError, load_profile_file
+from grant_assistant.configuration import (
+    GrantProfile,
+    ProfileValidationError,
+    load_profile_file,
+)
+from grant_assistant.models import AuditResult
 from grant_assistant.ui import theme
+from grant_assistant.workflow import run_pipeline_on_frame
+
+#: Session keys derived from the pipeline. They must be dropped whenever it is
+#: replaced, or a new dataset is narrated by an agent still holding the old one.
+_DERIVED_KEYS = ("agent", "chat_history", "report_html", "report_docx", "report_pdf")
 
 
 def loaded() -> bool:
     return "pipeline" in st.session_state
+
+
+def store_pipeline(source: pd.DataFrame, profile: GrantProfile, filename: str) -> AuditResult:
+    """Run the pipeline over a source frame and make it the session's dataset.
+
+    The source frame is kept alongside the results so the dataset can be re-run
+    under a different profile without the user re-uploading it. That is a third
+    copy of the data in memory, which is the deliberate cost of making the
+    profile selector actually do something once a file is loaded.
+    """
+    result = run_pipeline_on_frame(source, profile)
+    st.session_state["pipeline"] = {
+        "prepared": result.prepared,
+        "profile": result.profile,
+        "audit": result.audit,
+        "analytics": result.analytics,
+        "filename": filename,
+        "source": source,
+    }
+    for key in _DERIVED_KEYS:
+        st.session_state.pop(key, None)
+    return result.audit
 
 
 @st.cache_data(show_spinner=False)

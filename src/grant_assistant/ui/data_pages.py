@@ -8,8 +8,6 @@ import pandas as pd
 import streamlit as st
 
 from grant_assistant import schema
-from grant_assistant.analytics import compute_analytics
-from grant_assistant.audit import run_audit
 from grant_assistant.configuration import (
     ProfileValidationError,
     list_profiles,
@@ -19,7 +17,6 @@ from grant_assistant.ingestion import (
     IngestionError,
     load_dataset,
     merge_uploaded_datasets,
-    prepare_dataset,
 )
 from grant_assistant.ui import theme
 from grant_assistant.ui.state import (
@@ -30,6 +27,9 @@ from grant_assistant.ui.state import (
 )
 from grant_assistant.ui.state import (
     require_data as _require_data,
+)
+from grant_assistant.ui.state import (
+    store_pipeline as _store_pipeline,
 )
 from grant_assistant.ui.theme import Kpi
 
@@ -127,10 +127,29 @@ def page_upload() -> None:
                 f"data quality score {audit.overall_score:.1f}/100 (grade {audit.grade}). "
                 "Open **Audit Dashboard** in the left rail to see the findings."
             )
-            st.caption(
-                "Upload a file above to audit your own extract instead. Changing the profile "
-                "applies to the next run, not to the dataset already loaded."
-            )
+            source = p.get("source")
+            if source is not None and profile.profile_id != p["profile"].profile_id:
+                # Selecting a different funder used to change nothing until the user
+                # re-uploaded. Re-running from the retained source frame is the whole
+                # reason it is kept.
+                if st.button(
+                    f"Re-run this dataset as **{profile.grant_name}**",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    try:
+                        _store_pipeline(source, profile, p["filename"])
+                    except (IngestionError, ProfileValidationError) as exc:
+                        st.error(str(exc))
+                        return
+                    st.rerun()
+                st.caption(
+                    f"Currently audited as **{p['profile'].grant_name}**. Re-running applies "
+                    f"{profile.grant_name}'s field mappings, vocabularies, and targets to the "
+                    "same rows."
+                )
+            else:
+                st.caption("Upload a file above to audit your own extract instead.")
         elif uploaded is None:
             st.info("Upload a file to enable the audit and analytics pipeline.")
         elif st.button("Run audit + analytics", type="primary", use_container_width=True):
@@ -140,21 +159,11 @@ def page_upload() -> None:
                     raw = merge_uploaded_datasets(
                         raw, [(f.name, f.getvalue()) for f in related], profile
                     )
-                prepared = prepare_dataset(raw, profile)
-                audit = run_audit(prepared, profile)
-                analytics = compute_analytics(prepared, profile)
+                audit = _store_pipeline(raw, profile, uploaded.name)
             except (IngestionError, ProfileValidationError) as exc:
                 st.error(str(exc))
                 return
-            st.session_state["pipeline"] = {
-                "prepared": prepared,
-                "profile": profile,
-                "audit": audit,
-                "analytics": analytics,
-                "filename": uploaded.name,
-            }
-            for key in ("agent", "chat_history", "report_html", "report_docx", "report_pdf"):
-                st.session_state.pop(key, None)
+            prepared = st.session_state["pipeline"]["prepared"]
             merged_note = f" (flattened with {len(related)} related file(s))" if related else ""
             st.success(
                 f"Processed **{uploaded.name}**{merged_note} — {len(prepared.df)} rows, data "

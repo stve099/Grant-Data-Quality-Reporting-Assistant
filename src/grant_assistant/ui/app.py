@@ -16,11 +16,9 @@ from pathlib import Path
 import streamlit as st
 
 from grant_assistant.agents.provider import ai_available
-from grant_assistant.analytics import compute_analytics
-from grant_assistant.audit import run_audit
 from grant_assistant.configuration import list_profiles, load_profile_file
 from grant_assistant.env import load_environment
-from grant_assistant.ingestion import load_dataset, prepare_dataset
+from grant_assistant.ingestion import load_dataset
 from grant_assistant.ui import theme
 from grant_assistant.ui.pages import (
     page_analytics,
@@ -35,7 +33,7 @@ from grant_assistant.ui.pages import (
     page_report,
     page_upload,
 )
-from grant_assistant.ui.state import loaded
+from grant_assistant.ui.state import loaded, store_pipeline
 
 load_environment()
 
@@ -78,14 +76,7 @@ def _demo_autoload() -> None:
     if profile_id not in profiles:
         return
     profile = load_profile_file(profiles[profile_id])
-    prepared = prepare_dataset(load_dataset(demo_path), profile)
-    st.session_state["pipeline"] = {
-        "prepared": prepared,
-        "profile": profile,
-        "audit": run_audit(prepared, profile),
-        "analytics": compute_analytics(prepared, profile),
-        "filename": demo_path.name,
-    }
+    store_pipeline(load_dataset(demo_path), profile, demo_path.name)
     # Point the Upload page's profile selector at what was actually loaded. Without
     # this it falls back to the first profile alphabetically, so a demo visitor sees
     # the picker naming one grant while the sidebar names another. Set before the

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.12.0 — 2026-08-11
+
+### Added
+
+- **Re-run a loaded dataset under a different profile.** Selecting another funder on the Upload
+  page now offers a re-run button instead of changing nothing until the user re-uploads. The
+  same rows are re-audited under the new profile's field mappings, vocabularies, and targets.
+  This is the whole reason the source frame is now retained: `PreparedData.raw` is already
+  mapped, and the profile is what decides which headers map, so re-preparing has to start from
+  the original frame.
+
+### Changed
+
+- **`workflow.run_pipeline_on_frame`** is the new frame-level core; `run_pipeline` loads a file
+  and delegates to it. Building a pipeline from an in-memory frame was previously assembled by
+  hand in the UI.
+- **`ui.state.store_pipeline`** replaces three near-identical blocks that each built the session
+  pipeline and cleared its derived keys. A missed key there meant the AI analyst narrating a new
+  dataset from the previous one's facts, which is now impossible to get wrong in one place.
+
 ## 1.11.2 — 2026-08-11
 
 ### Fixed

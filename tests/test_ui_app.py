@@ -348,3 +348,56 @@ def test_upload_prompt_still_appears_with_no_data():
     _goto(app, "Upload & Profile")
     assert not app.exception
     assert "Upload a file to enable" in _text_of(app)
+
+
+def test_selecting_another_profile_offers_a_re_run(loaded_app):
+    """Choosing a different funder must do something, not just relabel a dropdown."""
+    _goto(loaded_app, "Upload & Profile")
+    box = next(s for s in loaded_app.selectbox if s.label == "Grant profile")
+    assert box.value == "housing_stability"
+
+    box.set_value("rapid_rehousing").run()
+    assert not loaded_app.exception
+
+    labels = [b.label for b in loaded_app.button]
+    assert any("Re-run this dataset" in label for label in labels), labels
+    # Still the old results until the button is pressed.
+    assert loaded_app.session_state["pipeline"]["profile"].profile_id == "housing_stability"
+
+
+def test_re_running_under_another_profile_re_audits_the_same_rows(loaded_app):
+    """The re-run must apply the new profile's rules, not relabel the old result."""
+    _goto(loaded_app, "Upload & Profile")
+    before = loaded_app.session_state["pipeline"]
+    before_score = before["audit"].overall_score
+    before_rows = len(before["prepared"].df)
+    filename = before["filename"]
+
+    box = next(s for s in loaded_app.selectbox if s.label == "Grant profile")
+    box.set_value("rapid_rehousing").run()
+    button = next(b for b in loaded_app.button if "Re-run this dataset" in b.label)
+    button.click().run()
+    assert not loaded_app.exception
+
+    after = loaded_app.session_state["pipeline"]
+    assert after["profile"].profile_id == "rapid_rehousing"
+    assert after["filename"] == filename, "same dataset, not a re-upload"
+    assert len(after["prepared"].df) == before_rows, "same rows"
+    # A different profile means different mappings, vocabularies, and targets, so
+    # the audit is genuinely recomputed rather than carried over.
+    assert after["audit"].overall_score != before_score
+    assert after["analytics"] is not before["analytics"]
+
+
+def test_re_run_clears_the_agent_bound_to_the_previous_profile(loaded_app):
+    """A stale agent would narrate the new dataset using the old profile's facts."""
+    _goto(loaded_app, "Analyst Chat")
+    assert not loaded_app.exception
+    _goto(loaded_app, "Upload & Profile")
+    loaded_app.session_state["agent"] = object()
+
+    box = next(s for s in loaded_app.selectbox if s.label == "Grant profile")
+    box.set_value("rapid_rehousing").run()
+    next(b for b in loaded_app.button if "Re-run this dataset" in b.label).click().run()
+
+    assert "agent" not in loaded_app.session_state
