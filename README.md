@@ -406,6 +406,7 @@ errors and runs a CLI smoke pipeline on every push.
 | Streamlit port already in use | `streamlit run ... --server.port 8502` |
 | Charts blank in the HTML report offline | The HTML report loads plotly.js from a CDN; open it online or keep the Streamlit app for offline charts |
 | PDF export says the browser is missing | `uv run playwright install chromium` — the browser is a separate download from the `pdf` extra, and one left behind by an older playwright does not count |
+| Word/PowerPoint reports have no charts | `uv run plotly_get_chrome` — kaleido renders through a browser it downloads separately from the `charts` extra. Reports are still correct without it, just without images |
 | Re-run / apply-corrections missing in the app | The extract is above `GRANT_ASSISTANT_MAX_RETAINED_ROWS`; raise it, or use `grant-assistant apply-corrections`, which reads from disk |
 
 ---

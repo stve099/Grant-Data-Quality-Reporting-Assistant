@@ -25,8 +25,9 @@
   browser it downloads on a separate command, so `uv sync --extra charts` alone left
   `chart_backend_available()` claiming a backend that could not produce an image: the chart tests
   ran and failed where they meant to skip, and `require_chart_backend()` advised installing an
-  extra that was already installed. Same defect and same fix as the PDF backend in 1.13.0. CI now
-  fetches that browser so the all-extras job keeps proving charts actually render.
+  extra that was already installed. Same defect and same fix as the PDF backend in 1.13.0. The
+  all-extras CI job asserts the backend by rendering, so it now also catches a runner image that
+  stops shipping the browser kaleido finds.
 - **A corrected dataset comes back in the format it arrived in.** The app returned CSV whatever
   was uploaded, so someone who works in Excel had to convert the file back — one more chance to
   lose a leading zero off a client ID. A workbook now round-trips as a workbook.
