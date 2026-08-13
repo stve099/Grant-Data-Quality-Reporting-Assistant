@@ -163,3 +163,57 @@ def test_an_unmatched_question_says_what_is_available(deterministic_agent):
     answer = deterministic_agent.ask("What is the average credit score?")
     assert "not available" in answer.casefold() or "could not match" in answer.casefold()
     assert "total_enrollments" in answer
+
+
+# -- The recorded trend in non-AI mode ----------------------------------------
+#
+# Non-AI mode is a first-class mode here, so history reaching only the model's
+# fact sheet would leave every keyless installation unable to answer the one
+# question the history store exists for.
+
+
+def _agent_with_history(tmp_path, analytics, audit_before, audit_after, profile):
+    from grant_assistant.agents import DataAnalystAgent
+    from grant_assistant.history import build_history_summary, load_history, record_run
+
+    db = tmp_path / "history.db"
+    record_run(profile, audit_before, analytics, db, label="Q1")
+    summary = build_history_summary(load_history(db), audit_after, profile.profile_id)
+    return DataAnalystAgent(analytics, audit_after, profile, provider=None, history=summary)
+
+
+def test_a_data_quality_question_reports_the_recorded_movement(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    agent = _agent_with_history(tmp_path, analytics_flawed, audit_flawed, audit_clean, profile)
+    answer = agent.ask("is data quality improving over time?")
+
+    assert "Across recorded runs" in answer
+    assert "recorded run(s)" in answer
+
+
+def test_a_trend_question_reports_it_too(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    agent = _agent_with_history(tmp_path, analytics_flawed, audit_flawed, audit_clean, profile)
+    assert "Across recorded runs" in agent.ask("what is the trend over time?")
+
+
+def test_without_history_the_answer_is_unchanged(analytics_flawed, audit_flawed, profile):
+    """No recorded runs must add nothing rather than an empty heading."""
+    from grant_assistant.agents import DataAnalystAgent
+
+    agent = DataAnalystAgent(analytics_flawed, audit_flawed, profile, provider=None)
+    answer = agent.ask("any data quality issues?")
+    assert "Across recorded runs" not in answer
+    assert answer.strip().endswith(agent.audit.executive_summary().strip())
+
+
+def test_the_deterministic_trend_answer_does_no_arithmetic_of_its_own(
+    tmp_path, analytics_flawed, audit_flawed, audit_clean, profile
+):
+    """Every figure in the sentence comes from the summary, as in AI mode."""
+    agent = _agent_with_history(tmp_path, analytics_flawed, audit_flawed, audit_clean, profile)
+    assert agent.history is not None
+    answer = agent.ask("is data quality improving over time?")
+    assert f"{abs(agent.history.since_previous):.1f} points" in answer

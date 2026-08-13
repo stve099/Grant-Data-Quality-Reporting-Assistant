@@ -17,7 +17,7 @@ from pathlib import Path
 
 from grant_assistant.analytics import AnalyticsResult
 from grant_assistant.configuration import GrantProfile
-from grant_assistant.history import record_run
+from grant_assistant.history import load_history_summary, record_run
 from grant_assistant.models import AuditResult
 from grant_assistant.reporting import build_report_data, write_html_report
 from grant_assistant.workflow import PipelineResult, run_pipeline
@@ -119,6 +119,11 @@ def run_scheduled_audit(
     person, which is the only way an operator could previously test this.
     """
     result = run_pipeline(data_file, profile, config_dir)
+    # Read the history before writing this run into it. A scheduled audit is the
+    # path that accumulates history in the first place, so its own report is the
+    # one that most needs the trend — and the run being recorded now is the
+    # current audit, not an observation preceding it.
+    history = load_history_summary(db_path, result.profile.profile_id, result.audit)
     run_id = record_run(
         result.profile,
         result.audit,
@@ -129,7 +134,7 @@ def run_scheduled_audit(
     )
     output = Path(output_dir)
     report_path = output / f"{result.profile.profile_id}-run-{run_id}.html"
-    report = build_report_data(result.analytics, result.audit, result.profile)
+    report = build_report_data(result.analytics, result.audit, result.profile, history=history)
     write_html_report(report, report_path, offline_charts=True)
 
     email_sent = False

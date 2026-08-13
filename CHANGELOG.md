@@ -18,6 +18,16 @@
   a trend inferred from one snapshot.
 - **`grant-assistant report --history-db`** picks the database behind that section; it defaults
   to the standard location and is omitted when that holds no runs for the profile.
+- **The executive brief states the movement too**, in a form that suits two pages: the headline
+  sentence and what is long-standing, leaving the run table to the full report.
+- **A scheduled audit's report carries the trend.** That path is what accumulates history in the
+  first place, so its own report was the most conspicuous one omitting it. History is read before
+  the run is recorded, so a nightly audit is never compared against its own row.
+- **Non-AI mode answers trend questions too.** Passing history to the agent only reached the
+  model's fact sheet, leaving every keyless installation unable to answer the question the
+  history store exists for. The deterministic data-quality and trend answers now carry the
+  recorded movement, long-standing findings, and what cleared — read from the same pre-computed
+  summary, so that path does no arithmetic either.
 
 ### Changed
 

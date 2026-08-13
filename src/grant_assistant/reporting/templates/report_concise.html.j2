@@ -104,6 +104,20 @@
 </div>
 {% endif %}
 
+{% if r.has_history and r.includes("history") %}
+{# The brief carries the movement and what is long-standing, not the run ledger:
+   a two-page summary states the direction and leaves the table to the full report. #}
+<h2>Data Quality Over Time</h2>
+<p>{{ r.history.headline() }}</p>
+{% if r.history.persistent_findings %}
+<p><strong>Open for three or more consecutive runs:</strong>
+{% for f in r.history.persistent_findings %}{{ f.rule_name }} ({{ f.records }}){% if not loop.last %}, {% endif %}{% endfor %}.</p>
+{% endif %}
+{% if r.history.resolved_rule_ids %}
+<p>Resolved since the previous recorded run: {{ r.history.resolved_rule_ids|join(", ") }}.</p>
+{% endif %}
+{% endif %}
+
 {% if r.includes("measures") %}
 <h2>Performance Measures</h2>
 <table>
