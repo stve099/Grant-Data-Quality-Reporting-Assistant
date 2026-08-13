@@ -201,12 +201,20 @@ def test_the_word_report_states_the_movement(report_with_history, tmp_path):
 
 def test_the_profile_can_turn_the_section_off(report_with_history):
     """Section selection governs the trend like every other section."""
+    import dataclasses
+
     from grant_assistant.reporting import render_html_report
 
-    report_with_history.profile.report.sections = [
-        s for s in report_with_history.profile.report.sections if s != "history"
-    ]
-    assert "Data Quality Over Time" not in render_html_report(report_with_history)
+    # The profile fixture is session-scoped: editing its sections in place would
+    # silently disable this section for every test that runs after this one.
+    without = report_with_history.profile.model_copy(deep=True)
+    without.report.sections = [s for s in without.report.sections if s != "history"]
+    data = dataclasses.replace(report_with_history, profile=without)
+
+    assert "Data Quality Over Time" not in render_html_report(data)
+    assert "Data Quality Over Time" in render_html_report(report_with_history), (
+        "the unmodified report must be unaffected"
+    )
 
 
 def test_the_report_and_the_analyst_are_given_the_same_history(
@@ -228,3 +236,20 @@ def test_the_report_and_the_analyst_are_given_the_same_history(
     assert agent.fact_sheet["quality_history"]["score_change_since_previous_run"] == (
         summary.since_previous
     )
+
+
+def test_the_executive_brief_states_the_movement_too(report_with_history):
+    """The brief is built from the same results; silently dropping the trend hides it."""
+    from grant_assistant.reporting import render_html_report
+
+    concise = render_html_report(report_with_history, template="concise")
+    assert "Data Quality Over Time" in concise
+    assert report_with_history.history is not None
+    assert report_with_history.history.headline() in concise
+
+
+def test_the_brief_omits_the_trend_when_there_is_none(analytics_flawed, audit_flawed, profile):
+    from grant_assistant.reporting import build_report_data, render_html_report
+
+    data = build_report_data(analytics_flawed, audit_flawed, profile)
+    assert "Data Quality Over Time" not in render_html_report(data, template="concise")

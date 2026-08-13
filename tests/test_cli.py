@@ -989,3 +989,37 @@ def test_report_without_history_says_nothing_about_a_trend(tmp_path):
     assert "Data Quality Over Time" not in (tmp_path / "grant_report.html").read_text(
         encoding="utf-8"
     )
+
+
+def test_a_scheduled_report_carries_the_trend_from_earlier_runs(tmp_path):
+    """The nightly path is what accumulates history, so its report must show it."""
+    db = tmp_path / "history.db"
+    output = tmp_path / "scheduled"
+    args = [
+        "scheduled-audit",
+        str(FLAWED),
+        "--output",
+        str(output),
+        "--db",
+        str(db),
+        "--config-dir",
+        str(CONFIG_DIR),
+    ]
+
+    first = _run(*args, "--label", "night one")
+    assert first.exit_code == 0
+    reports = sorted(output.glob("*.html"))
+    assert len(reports) == 1
+    # Nothing preceded this run, so it claims no trend.
+    assert "Data Quality Over Time" not in reports[0].read_text(encoding="utf-8")
+
+    second = _run(*args, "--label", "night two")
+    assert second.exit_code == 0
+    reports = sorted(output.glob("*.html"), key=lambda p: p.stat().st_mtime)
+    assert len(reports) == 2
+    later = reports[-1].read_text(encoding="utf-8")
+    assert "Data Quality Over Time" in later
+    assert "night one" in later
+    # The run being recorded now is the current audit, not an observation before
+    # it: one earlier run means one row, not two.
+    assert later.count("night two") == 0

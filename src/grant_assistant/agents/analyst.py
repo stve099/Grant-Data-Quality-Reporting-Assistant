@@ -228,6 +228,26 @@ class DataAnalystAgent:
 
     # -- Deterministic fallback Q&A -------------------------------------------
 
+    def _history_note(self) -> str:
+        """The recorded trend, for the deterministic answers that should carry it.
+
+        Non-AI mode is a first-class mode here, so history reaching only the
+        model's fact sheet would leave every keyless installation unable to
+        answer the question the history store exists for. Reads the pre-computed
+        summary — this path does no arithmetic either.
+        """
+        history = self.history
+        if history is None or not history.runs:
+            return ""
+        note = f"\n\nAcross recorded runs: {history.headline()}"
+        if history.persistent_findings:
+            note += "\nOpen for three or more consecutive runs: " + "; ".join(
+                finding.describe() for finding in history.persistent_findings
+            )
+        if history.resolved_rule_ids:
+            note += "\nResolved since the previous run: " + ", ".join(history.resolved_rule_ids)
+        return note
+
     def _fallback_answer(self, question: str) -> str:
         q = question.casefold()
         a = self.analytics
@@ -312,7 +332,7 @@ class DataAnalystAgent:
         if intent is Intent.DATA_QUALITY:
             if self.audit is None:
                 return prefix + "No audit has been run in this session yet."
-            return prefix + self.audit.executive_summary()
+            return prefix + self.audit.executive_summary() + self._history_note()
 
         if intent is Intent.CAVEATS:
             small_programs = [p for p in a.programs if p.small_sample and p.exits]
@@ -335,8 +355,10 @@ class DataAnalystAgent:
 
         if intent is Intent.TRENDS:
             insights = self.proactive_insights()
-            return prefix + "\n".join(
-                insights.notable_trends or ["No monthly trend data available."]
+            return (
+                prefix
+                + "\n".join(insights.notable_trends or ["No monthly trend data available."])
+                + self._history_note()
             )
 
         if intent is Intent.SUMMARY:
